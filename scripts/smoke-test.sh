@@ -1,7 +1,5 @@
-#!/bin/bash
-# smoke-test.sh — End-to-end smoke test for agent-loop
-
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
 
 export PATH="$HOME/.agent-loop/bin:$PATH"
 
@@ -18,15 +16,22 @@ agent-loop-init-goal "$GOAL_ID" "Smoke test goal"
 
 # Step 2: Write dummy command
 mkdir -p "$GOAL_DIR/hermes-commands"
-cat > "$GOAL_DIR/hermes-commands/001.md" <<'EOF'
+cat > "$GOAL_DIR/hermes-commands/001.md" <<'CMDEOF'
 BEGIN_HERMES_COMMAND
 goal_id: SMOKE_TEST
-decision: DONE
-requires_human_approval: false
-reason: Smoke test
-next_expected_result: none
-END_OPENCLAW_DECISION
-EOF
+iteration: 1
+command_type: validate
+objective: Smoke test validation
+context: Synthetic smoke test for agent-loop
+working_directory: /tmp
+instructions:
+  1. Create a temporary file with demo content
+  2. Verify the file exists
+validation: File exists and contains expected content
+report_back: HERMES_STATUS: REPORT_WRITTEN
+stop_conditions: If file creation fails, report FAIL
+END_HERMES_COMMAND
+CMDEOF
 
 # Step 3: Set state to COMMAND_READY
 echo ""
@@ -38,7 +43,6 @@ echo ""
 echo "Step 4: relay --once"
 agent-loop-relay --once "$GOAL_ID"
 
-# Verify state is still COMMAND_READY
 STATE=$(python3 -c "import json; print(json.load(open('$GOAL_DIR/state.json'))['current_state'])")
 if [ "$STATE" != "COMMAND_READY" ]; then
     echo "FAIL: State should be COMMAND_READY, got $STATE"
@@ -60,9 +64,9 @@ echo "PASS: State is DISPATCHED_TO_HERMES"
 
 # Step 6: Write report
 mkdir -p "$GOAL_DIR/hermes-reports"
-cat > "$GOAL_DIR/hermes-reports/001.md" <<EOF
+cat > "$GOAL_DIR/hermes-reports/001.md" <<'REPEOF'
 BEGIN_HERMES_REPORT
-goal_id: $GOAL_ID
+goal_id: SMOKE_TEST
 iteration: 1
 status: PASS
 summary: Smoke test report
@@ -70,11 +74,11 @@ changed_files: none
 commands_run: - smoke test
 validation_result: pass
 commit: none
-report_path: $GOAL_DIR/hermes-reports/001.md
+report_path: /tmp/smoke-test-report.md
 issues: none
 recommendation: none
 END_HERMES_REPORT
-EOF
+REPEOF
 
 # Step 7: --report-path
 echo ""
@@ -107,7 +111,7 @@ echo "PASS: State is OPENCLAW_JUDGING"
 
 # Step 10: Write decision
 mkdir -p "$GOAL_DIR/openclaw-decisions"
-cat > "$GOAL_DIR/openclaw-decisions/001.md" <<EOF
+cat > "$GOAL_DIR/openclaw-decisions/001.md" <<DECEOF
 BEGIN_OPENCLAW_DECISION
 goal_id: $GOAL_ID
 iteration: 1
@@ -116,7 +120,7 @@ requires_human_approval: false
 reason: Smoke test complete
 next_expected_result: none
 END_OPENCLAW_DECISION
-EOF
+DECEOF
 
 # Step 11: --decision-path
 echo ""

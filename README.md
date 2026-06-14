@@ -1,6 +1,19 @@
 # agent-loop
 
+[中文说明 / Chinese Guide](README.zh-CN.md)
+
 OpenClaw ↔️ Hermes dual-agent file-based relay loop protocol.
+
+## Quick Install
+
+```bash
+git clone https://github.com/conanxin/agent-loop.git
+cd agent-loop
+./scripts/install-all.sh
+export PATH="$HOME/.agent-loop/bin:$PATH"
+```
+
+For custom paths or step-by-step install, see [docs/INSTALL.md](docs/INSTALL.md).
 
 ## Why agent-loop?
 
@@ -44,13 +57,13 @@ cd agent-loop
 ./scripts/install.sh
 ```
 
-Or manually:
+Or use the full installer (tools + skills + smoke test):
 
 ```bash
-mkdir -p ~/.agent-loop
-cp -r bin/ ~/.agent-loop/
-export PATH="$HOME/.agent-loop/bin:$PATH"
+./scripts/install-all.sh
 ```
+
+For custom paths or advanced options, see [docs/INSTALL.md](docs/INSTALL.md).
 
 ## Directory Structure
 
@@ -195,6 +208,43 @@ See [docs/SCHEMAS.md](docs/SCHEMAS.md) for full schema documentation.
 - **No path leakage**: use `~/.agent-loop` instead of absolute paths
 
 See [docs/SAFETY_BOUNDARIES.md](docs/SAFETY_BOUNDARIES.md) for full safety rules.
+
+## Skills
+
+Install both OpenClaw and Hermes skills:
+
+```bash
+./scripts/install-skills.sh
+```
+
+This installs:
+- OpenClaw skill: `hermes-agent-loop` → `~/.openclaw/workspace/skills/`
+- Hermes skill: `openclaw-command-executor` → `~/.hermes/skills/`
+
+For custom paths, set `OPENCLAW_SKILLS_DIR` or `HERMES_SKILLS_DIR` before running.
+
+See [docs/AGENT_SKILLS.md](docs/AGENT_SKILLS.md) for detailed usage.
+
+## For Agents
+
+If you are an agent reading this, here's the fastest path to get started:
+
+```bash
+# 1. Install everything
+./scripts/install-all.sh
+
+# 2. Update PATH
+export PATH="$HOME/.agent-loop/bin:$PATH"
+
+# 3. Verify skills are installed
+ls -la ${OPENCLAW_SKILLS_DIR:-$HOME/.openclaw/workspace/skills}/hermes-agent-loop/
+ls -la ${HERMES_SKILLS_DIR:-$HOME/.hermes/skills}/openclaw-command-executor/
+
+# 4. Create a test goal
+agent-loop-init-goal test "Test goal"
+agent-loop-set-state test COMMAND_READY
+agent-loop-show test
+```
 
 ## Documentation
 

@@ -1,22 +1,20 @@
-#!/bin/bash
-# install.sh — Install agent-loop
-
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
 
 REPO_URL="https://github.com/conanxin/agent-loop.git"
-INSTALL_DIR="$HOME/.agent-loop"
-BIN_DIR="$INSTALL_DIR/bin"
+AGENT_LOOP_HOME="${AGENT_LOOP_HOME:-$HOME/.agent-loop}"
+BIN_DIR="$AGENT_LOOP_HOME/bin"
 
 echo "Installing agent-loop..."
 
 # Clone or update repository
-if [ -d "$INSTALL_DIR" ]; then
-    echo "Directory $INSTALL_DIR exists. Updating..."
-    cd "$INSTALL_DIR"
+if [ -d "$AGENT_LOOP_HOME/.git" ]; then
+    echo "Directory $AGENT_LOOP_HOME exists. Updating..."
+    cd "$AGENT_LOOP_HOME"
     git pull origin main
 else
     echo "Cloning repository..."
-    git clone "$REPO_URL" "$INSTALL_DIR"
+    git clone "$REPO_URL" "$AGENT_LOOP_HOME"
 fi
 
 # Add to PATH if not already present
@@ -29,22 +27,17 @@ fi
 echo "Verifying installation..."
 export PATH="$BIN_DIR:$PATH"
 
-if command -v agent-loop-init-goal &> /dev/null; then
-    echo "✓ agent-loop-init-goal found"
-else
-    echo "✗ agent-loop-init-goal not found"
-    exit 1
-fi
-
-if command -v agent-loop-relay &> /dev/null; then
-    echo "✓ agent-loop-relay found"
-else
-    echo "✗ agent-loop-relay not found"
-    exit 1
-fi
+for tool in agent-loop-init-goal agent-loop-set-state agent-loop-show agent-loop-relay; do
+    if command -v "$tool" &> /dev/null; then
+        echo "✓ $tool found"
+    else
+        echo "✗ $tool not found"
+        exit 1
+    fi
+done
 
 # Create goals directory if not exists
-mkdir -p "$INSTALL_DIR/goals"
+mkdir -p "$AGENT_LOOP_HOME/goals"
 
 echo ""
 echo "Installation complete!"
