@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# agent-loop-show — display current status of a goal.
+#
+# Usage: agent-loop-show <goal_id>
+#
+# Shows:
+#   - goal_id
+#   - current_state
+#   - iteration
+#   - last_command (file path if exists)
+#   - last_report  (file path if exists)
+#   - last_decision (file path if exists)
+#   - human_approval_required
+#   - latest hermes-reports/*.md (by mtime)
+#   - latest openclaw-decisions/*.md (by mtime)
+
+set -euo pipefail
+
+if [ "$#" -ne 1 ]; then
+    echo "Usage: agent-loop-show <goal_id>" >&2
+    exit 2
+fi
+
+GOAL_ID="$1"
+GOAL_DIR="~/.agent-loop/goals/${GOAL_ID}"
+
+if [ ! -d "$GOAL_DIR" ]; then
+    echo "Goal not found: ${GOAL_ID}" >&2
+    echo "Expected directory: ${GOAL_DIR}" >&2
+    exit 1
+fi
+
+STATE_FILE="${GOAL_DIR}/state.json"
+if [ ! -f "$STATE_FILE" ]; then
+    echo "Error: state.json missing for goal ${GOAL_ID}" >&2
+    exit 1
+fi
+
+# Render state.json via Python for stable, indentation-tolerant display.
+python3 - "$STATE_FILE" "$GOAL_DIR" <<'PYEOF'
+import json, os, sys, glob
+
+state_file = sys.argv[1]
+goal_dir = sys.argv[2]
+
+with open(state_file, "r", encoding="utf-8") as f:
+    state = json.load(f)
+
+print(f"goal_id:                   {state.get('goal_id', '?')}")
+print(f"current_state:             {state.get('current_state', '?')}")
+print(f"iteration:                 {state.get('iteration', '?')}")
+print(f"last_command:              {state.get('last_command') or '(none)'}")
+print(f"last_report:               {state.get('last_report') or '(none)'}")
+print(f"last_decision:             {state.get('last_decision') or '(none)'}")
+print(f"human_approval_required:   {state.get('human_approval_required', False)}")
+print(f"human_approved:            {state.get('human_approved') or '(none)'}")
+print(f"created_at:                {state.get('created_at', '?')}")
+print(f"updated_at:                {state.get('updated_at', '?')}")
+
+# Find latest files by mtime.
+def latest_file(pattern):
+    files = glob.glob(pattern)
+    if not files:
+        return None
+    files.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+    return files[0]
+
+latest_report = latest_file(f"{goal_dir}/hermes-reports/*.md")
+latest_decision = latest_file(f"{goal_dir}/openclaw-decisions/*.md")
+latest_command = latest_file(f"{goal_dir}/hermes-commands/*.md")
+
+print("")
+print("Latest files (by mtime):")
+print(f"  hermes report:    {latest_report or '(none)'}")
+print(f"  openclaw decision:{latest_decision or '(none)'}")
+print(f"  hermes command:   {latest_command or '(none)'}")
+PYEOF

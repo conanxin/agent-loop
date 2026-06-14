@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+# agent-loop-set-state — safely update current_state in a goal's state.json.
+#
+# Usage: agent-loop-set-state <goal_id> <state>
+#
+# Valid states (defined in SPEC.md §3):
+#   INIT, OPENCLAW_PLANNING, COMMAND_READY, WAITING_HUMAN_APPROVAL,
+#   DISPATCHED_TO_HERMES, HERMES_RUNNING, HERMES_REPORT_WRITTEN,
+#   OPENCLAW_JUDGING, DONE, PARTIAL, BLOCKED, NEEDS_HUMAN_REVIEW
+#
+# Implementation: uses Python stdlib `json` for safe update — no fragile sed,
+# no jq, no external dependencies. Atomic write (tmp file + rename) to avoid
+# partial writes on crash.
+
+set -euo pipefail
+
+if [ "$#" -ne 2 ]; then
+    echo "Usage: agent-loop-set-state <goal_id> <state>" >&2
+    exit 2
+fi
+
+GOAL_ID="$1"
+NEW_STATE="$2"
+
+VALID_STATES="INIT OPENCLAW_PLANNING COMMAND_READY WAITING_HUMAN_APPROVAL DISPATCHED_TO_HERMES HERMES_RUNNING HERMES_REPORT_WRITTEN OPENCLAW_JUDGING DONE PARTIAL BLOCKED NEEDS_HUMAN_REVIEW"
+
+# Validate state value.
+VALID=0
+for s in $VALID_STATES; do
+    if [ "$s" = "$NEW_STATE" ]; then
+        VALID=1
+        break
+    fi
+done
+if [ "$VALID" -ne 1 ]; then
+    echo "Invalid state: ${NEW_STATE}" >&2
+    echo "Valid states:" >&2
+    for s in $VALID_STATES; do
+        echo "  - $s" >&2
+    done
+    exit 1
+fi
+
+GOAL_DIR="~/.agent-loop/goals/${GOAL_ID}"
+STATE_FILE="${GOAL_DIR}/state.json"
+
+if [ ! -f "$STATE_FILE" ]; then
+    echo "Goal not found: ${GOAL_ID}" >&2
+    echo "Expected state file: ${STATE_FILE}" >&2
+    exit 1
+fi
+
+TIMESTAMP="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+
+# Update state.json safely via Python stdlib `json`.
+python3 - "$STATE_FILE" "$NEW_STATE" "$TIMESTAMP" <<'PYEOF'
+import json, os, sys, tempfile
+
+state_file = sys.argv[1]
+new_state = sys.argv[2]
+timestamp = sys.argv[3]
+
+with open(state_file, "r", encoding="utf-8") as f:
+    state = json.load(f)
+
+state["current_state"] = new_state
+state["updated_at"] = timestamp
+
+# Atomic write: write to tmp file in same dir, then rename.
+dir_name = os.path.dirname(state_file)
+fd, tmp_path = tempfile.mkstemp(dir=dir_name, suffix=".tmp", prefix=".state.")
+try:
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump(state, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+    os.replace(tmp_path, state_file)
+except Exception:
+    if os.path.exists(tmp_path):
+        os.unlink(tmp_path)
+    raise
+PYEOF
+
+echo "Goal ${GOAL_ID}: current_state -> ${NEW_STATE}"
+echo "Updated at: ${TIMESTAMP}"

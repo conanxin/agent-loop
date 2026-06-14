@@ -1,0 +1,655 @@
+#!/usr/bin/env bash
+# agent-loop-relay — one-shot relay for OpenClaw → Hermes (manual mode).
+#
+# This is a one-shot CLI tool — NOT a daemon. It does NOT auto-call Hermes,
+# Telegram, OpenClaw, or any other service. It only:
+#   1. Reads the goal's state.json
+#   2. Prints the pending Hermes command (if state == COMMAND_READY)
+#   3. Records the dispatched state (if --mark-dispatched is passed)
+#   4. Records the returned report path (if --report-path is passed)
+#   5. Prints a stable judge prompt for OpenClaw (if --judge-prompt is passed)
+#   6. Records the judging-started state (if --mark-judging is passed)
+#   7. Ingests an OpenClaw decision file (if --decision-path is passed)
+#
+# Usage:
+#   agent-loop-relay --once <goal_id>
+#   agent-loop-relay --once <goal_id> --mark-dispatched
+#   agent-loop-relay --once <goal_id> --report-path <absolute_path>
+#   agent-loop-relay --judge-prompt <goal_id>
+#   agent-loop-relay --judge-prompt <goal_id> --mark-judging
+#   agent-loop-relay --decision-path <goal_id> <absolute_decision_path>
+#   agent-loop-relay --help
+#
+# State machine (from SPEC.md §3 + Phase 5A/5B/5C corrections):
+#
+#   COMMAND_READY:
+#     - prints the latest hermes-commands/<n>.md file
+#     - updates last_command
+#     - if human_approval_required == true: advances to WAITING_HUMAN_APPROVAL
+#     - if human_approval_required == false: stays at COMMAND_READY
+#         (user must run --mark-dispatched after copying command to Hermes)
+#
+#   WAITING_HUMAN_APPROVAL:
+#     - does NOT print a new command
+#     - prints hint to review last_command and run --mark-dispatched
+#
+#   --mark-dispatched:
+#     - only valid in COMMAND_READY or WAITING_HUMAN_APPROVAL
+#     - advances to DISPATCHED_TO_HERMES
+#     - does NOT call Hermes
+#
+#   DISPATCHED_TO_HERMES / HERMES_RUNNING:
+#     - prints "waiting for Hermes to return" hint
+#     - if --report-path provided: validates file, advances to HERMES_REPORT_WRITTEN
+#
+#   HERMES_REPORT_WRITTEN:
+#     - if --report-path provided: validates file, updates last_report
+#     - if --report-path NOT provided: prints hint to provide it
+#
+#   --judge-prompt:
+#     - only valid in HERMES_REPORT_WRITTEN (with non-null last_report)
+#     - prints a stable judge prompt for OpenClaw to consume
+#     - if --mark-judging provided: advances to OPENCLAW_JUDGING
+#     - does NOT call OpenClaw
+#
+#   OPENCLAW_JUDGING:
+#     - terminal for relay; OpenClaw judge-path is the next actor
+#
+#   --decision-path:
+#     - only valid in OPENCLAW_JUDGING or HERMES_REPORT_WRITTEN
+#     - reads and validates an OpenClaw decision file
+#     - updates state.json based on decision value
+#     - does NOT auto-generate the next command (human-controllable principle)
+
+set -euo pipefail
+
+# ---- argument parsing ---------------------------------------------------------
+
+GOAL_ID=""
+ONCE=0
+JUDGE_PROMPT=0
+MARK_DISPATCHED=0
+MARK_JUDGING=0
+DECISION_PATH=0
+REPORT_PATH=""
+DECISION_FILE=""
+SHOW_HELP=0
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --once)
+            ONCE=1
+            shift
+            ;;
+        --judge-prompt)
+            JUDGE_PROMPT=1
+            shift
+            ;;
+        --mark-dispatched)
+            MARK_DISPATCHED=1
+            shift
+            ;;
+        --mark-judging)
+            MARK_JUDGING=1
+            shift
+            ;;
+        --decision-path)
+            DECISION_PATH=1
+            shift
+            ;;
+        --report-path)
+            if [ "$#" -lt 2 ]; then
+                echo "Error: --report-path requires a value" >&2
+                exit 2
+            fi
+            REPORT_PATH="$2"
+            shift 2
+            ;;
+        --help|-h)
+            SHOW_HELP=1
+            shift
+            ;;
+        -*)
+            echo "Error: unknown flag: $1" >&2
+            echo "Run 'agent-loop-relay --help' for usage." >&2
+            exit 2
+            ;;
+        *)
+            if [ -z "$GOAL_ID" ]; then
+                GOAL_ID="$1"
+            elif [ "$DECISION_PATH" = "1" ] && [ -z "$DECISION_FILE" ]; then
+                DECISION_FILE="$1"
+            else
+                echo "Error: unexpected positional argument: $1" >&2
+                exit 2
+            fi
+            shift
+            ;;
+    esac
+done
+
+if [ "$SHOW_HELP" = "1" ]; then
+    cat <<'EOF'
+agent-loop-relay — one-shot relay for OpenClaw → Hermes (manual mode).
+
+USAGE
+  agent-loop-relay --once <goal_id>
+  agent-loop-relay --once <goal_id> --mark-dispatched
+  agent-loop-relay --once <goal_id> --report-path <absolute_path>
+  agent-loop-relay --judge-prompt <goal_id>
+  agent-loop-relay --judge-prompt <goal_id> --mark-judging
+  agent-loop-relay --decision-path <goal_id> <absolute_decision_path>
+  agent-loop-relay --help
+
+MODE FLAGS (mutually exclusive at top level)
+  --once          State-machine relay (default flow: COMMAND_READY → DISPATCHED → HERMES_REPORT_WRITTEN)
+  --judge-prompt  Build a stable judge prompt for OpenClaw from last_report
+  --decision-path Ingest an OpenClaw decision file and update state
+
+OPTIONAL FLAGS (combine with --once or --judge-prompt)
+  --mark-dispatched   Advance COMMAND_READY / WAITING_HUMAN_APPROVAL → DISPATCHED_TO_HERMES
+  --mark-judging      Advance HERMES_REPORT_WRITTEN → OPENCLAW_JUDGING
+  --report-path <p>   Record canonical report path and advance to HERMES_REPORT_WRITTEN
+
+WHAT THIS TOOL DOES
+  - Prints the pending Hermes command (state == COMMAND_READY)
+  - Records that the user manually dispatched the command (--mark-dispatched)
+  - Records the path of the canonical report that Hermes returned (--report-path)
+  - Prints a stable judge prompt for OpenClaw to consume (--judge-prompt)
+  - Records that OpenClaw has started judging (--mark-judging)
+  - Ingests an OpenClaw decision file and updates state (--decision-path)
+
+WHAT THIS TOOL DOES NOT DO
+  - Does NOT call Telegram bot API
+  - Does NOT call OpenClaw
+  - Does NOT auto-dispatch to Hermes (user must copy-paste)
+  - Does NOT auto-generate the next command (human-controllable principle)
+  - Does NOT run as a daemon (one-shot only)
+
+STATE MACHINE FLOW
+  INIT
+    └─> OPENCLAW_PLANNING  (OpenClaw planning)
+        └─> COMMAND_READY   (OpenClaw wrote hermes-commands/<n>.md)
+            ├─ if human_approval_required=false: stays here, user copies command
+            └─ if human_approval_required=true:  -> WAITING_HUMAN_APPROVAL
+
+  User runs: agent-loop-relay --once <goal_id> --mark-dispatched
+    └─> DISPATCHED_TO_HERMES
+
+  Hermes executes and writes canonical report, then notifies via Telegram:
+    HERMES_STATUS: REPORT_WRITTEN
+    HERMES_REPORT_PATH: <absolute path>
+
+  User runs: agent-loop-relay --once <goal_id> --report-path <path>
+    └─> HERMES_REPORT_WRITTEN
+
+  User runs: agent-loop-relay --judge-prompt <goal_id>
+    (prints stable judge prompt; user copies to OpenClaw)
+
+  User runs: agent-loop-relay --judge-prompt <goal_id> --mark-judging
+    └─> OPENCLAW_JUDGING
+
+  OpenClaw writes decision file, user runs:
+    agent-loop-relay --decision-path <goal_id> <absolute_path>
+    └─> DONE | PARTIAL | BLOCKED | NEEDS_HUMAN_REVIEW | OPENCLAW_PLANNING
+
+DECISION INGESTION (--decision-path)
+  Valid only when current_state is OPENCLAW_JUDGING or HERMES_REPORT_WRITTEN.
+
+  Decision file format (BEGIN_OPENCLAW_DECISION ... END_OPENCLAW_DECISION):
+    goal_id:                  (required, must match <goal_id>)
+    iteration:                (required)
+    decision:                 (required, must be one of 6 values)
+    requires_human_approval:  (required, true/false)
+    reason:                   (required)
+    next_expected_result:     (required)
+
+  Valid decision values and resulting states:
+    DONE              → current_state = DONE
+    BLOCKED           → current_state = BLOCKED
+    NEEDS_HUMAN_REVIEW → current_state = NEEDS_HUMAN_REVIEW
+    PARTIAL           → current_state = PARTIAL
+    NEXT_COMMAND      → current_state = OPENCLAW_PLANNING
+    REPAIR_COMMAND    → current_state = OPENCLAW_PLANNING
+
+  Why no auto-command generation:
+    The --decision-path tool only updates state. It does NOT write the next
+    hermes-commands/<n>.md file. OpenClaw (or the user) must explicitly plan
+    and write the next command. This keeps the human in the loop and prevents
+    unintended auto-execution loops.
+
+JUDGE PROMPT FORMAT (stable, user override #2)
+  /skill hermes-agent-loop judge-path
+
+  report_path: <absolute last_report path>
+
+  要求：
+  1. 使用绝对路径读取 canonical report。
+  2. 严格检查 BEGIN_HERMES_REPORT 15 点格式。
+  3. 根据 status 判断 DONE / PARTIAL / REPAIR_COMMAND / BLOCKED / NEEDS_HUMAN_REVIEW。
+  4. 如果判断完成，请输出 BEGIN_OPENCLAW_DECISION。
+  5. 不从 Telegram 文本解析报告正文。
+
+EXAMPLES
+  # 1. Print the pending Hermes command:
+  agent-loop-relay --once my-goal
+
+  # 2. After copying the command to Hermes (visible to user first):
+  agent-loop-relay --once my-goal --mark-dispatched
+
+  # 3. After Hermes returns the report (with the path from Telegram):
+  agent-loop-relay --once my-goal --report-path /abs/path/to/report.md
+
+  # 4. Generate judge prompt for OpenClaw (print only):
+  agent-loop-relay --judge-prompt my-goal
+
+  # 5. Generate judge prompt AND mark state as OPENCLAW_JUDGING:
+  agent-loop-relay --judge-prompt my-goal --mark-judging
+
+  # 6. Ingest an OpenClaw decision file:
+  agent-loop-relay --decision-path my-goal /abs/path/to/decision.md
+
+EOF
+    exit 0
+fi
+
+# ---- validation ---------------------------------------------------------------
+
+# --once, --judge-prompt, --decision-path are mutually exclusive top-level modes.
+TOP_MODE_COUNT=0
+[ "$ONCE" = "1" ] && TOP_MODE_COUNT=$((TOP_MODE_COUNT + 1))
+[ "$JUDGE_PROMPT" = "1" ] && TOP_MODE_COUNT=$((TOP_MODE_COUNT + 1))
+[ "$DECISION_PATH" = "1" ] && TOP_MODE_COUNT=$((TOP_MODE_COUNT + 1))
+
+if [ "$TOP_MODE_COUNT" -gt 1 ]; then
+    echo "Error: --once, --judge-prompt, and --decision-path are mutually exclusive" >&2
+    echo "Use --once for relay flow, --judge-prompt for judge prompt, --decision-path for decision ingestion." >&2
+    exit 2
+fi
+
+if [ "$TOP_MODE_COUNT" -eq 0 ]; then
+    echo "Error: must specify --once, --judge-prompt, or --decision-path" >&2
+    echo "Run 'agent-loop-relay --help' for usage." >&2
+    exit 2
+fi
+
+if [ -z "$GOAL_ID" ]; then
+    echo "Error: missing <goal_id>" >&2
+    echo "Run 'agent-loop-relay --help' for usage." >&2
+    exit 2
+fi
+
+GOAL_DIR="~/.agent-loop/goals/${GOAL_ID}"
+STATE_FILE="${GOAL_DIR}/state.json"
+
+if [ ! -d "$GOAL_DIR" ]; then
+    echo "Goal not found: ${GOAL_ID}" >&2
+    echo "Expected directory: ${GOAL_DIR}" >&2
+    exit 1
+fi
+
+if [ ! -f "$STATE_FILE" ]; then
+    echo "Error: state.json missing for goal ${GOAL_ID}" >&2
+    echo "Path: ${STATE_FILE}" >&2
+    exit 1
+fi
+
+# ---- main logic via python3 stdlib -------------------------------------------
+
+export GOAL_ID GOAL_DIR STATE_FILE MARK_DISPATCHED MARK_JUDGING REPORT_PATH JUDGE_PROMPT DECISION_PATH DECISION_FILE
+
+python3 - <<'PYEOF'
+import json
+import os
+import sys
+import glob
+import tempfile
+from datetime import datetime, timezone
+
+goal_id      = os.environ["GOAL_ID"]
+goal_dir     = os.environ["GOAL_DIR"]
+state_file   = os.environ["STATE_FILE"]
+mark_disp    = os.environ["MARK_DISPATCHED"] == "1"
+mark_judge   = os.environ["MARK_JUDGING"] == "1"
+report_path  = os.environ["REPORT_PATH"] or None
+judge_mode   = os.environ["JUDGE_PROMPT"] == "1"
+decision_mode = os.environ["DECISION_PATH"] == "1"
+decision_file = os.environ["DECISION_FILE"] or None
+
+# --- atomic json write helper ---
+def write_state_atomic(state, path):
+    dir_name = os.path.dirname(path)
+    fd, tmp_path = tempfile.mkstemp(dir=dir_name, suffix=".tmp", prefix=".state.")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(state, f, indent=2, ensure_ascii=False)
+            f.write("\n")
+        os.replace(tmp_path, path)
+    except Exception:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+        raise
+
+def now_iso():
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+def advance(state, new_state, prev_state=None):
+    if prev_state is None:
+        prev_state = state.get("current_state", "?")
+    state["current_state"] = new_state
+    state["updated_at"] = now_iso()
+    write_state_atomic(state, state_file)
+    print(f"state: {prev_state} -> {new_state}")
+
+# --- compute expected next report path (with iteration=0 fix) ---
+def expected_report_path(state):
+    """
+    Return the canonical expected report path.
+    Bug fix (Phase 5B): when iteration=0 (OpenClaw hasn't bumped it yet),
+    show '001.md' instead of '000.md' — Hermes will write the FIRST report
+    regardless of state.iteration.
+    """
+    iteration = state.get("iteration", 0)
+    if not iteration or int(iteration) <= 0:
+        return f"{goal_dir}/hermes-reports/001.md"
+    return f"{goal_dir}/hermes-reports/{int(iteration):03d}.md"
+
+# --- load state ---
+with open(state_file, "r", encoding="utf-8") as f:
+    state = json.load(f)
+
+current_state = state.get("current_state", "?")
+human_approval_required = bool(state.get("human_approval_required", False))
+
+# --- helper: find latest command file (sorted by name) ---
+def latest_command():
+    files = sorted(glob.glob(f"{goal_dir}/hermes-commands/*.md"))
+    return files[-1] if files else None
+
+# =====================================================================
+# Mode: --decision-path (Phase 5C new)
+# =====================================================================
+if decision_mode:
+    # 1. Validate state
+    if current_state not in ("OPENCLAW_JUDGING", "HERMES_REPORT_WRITTEN"):
+        print(f"Error: Decision ingestion is only valid after judge prompt / report written. (current: {current_state})", file=sys.stderr)
+        sys.exit(1)
+
+    # 2. Validate decision file path
+    if not decision_file:
+        print("Error: --decision-path requires <absolute_decision_path>", file=sys.stderr)
+        sys.exit(2)
+
+    if not os.path.isfile(decision_file):
+        print(f"Error: decision file not found: {decision_file}", file=sys.stderr)
+        sys.exit(1)
+
+    # 3. Read and parse decision file
+    with open(decision_file, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    # 4. Validate markers
+    if "BEGIN_OPENCLAW_DECISION" not in content:
+        print("Error: decision file missing BEGIN_OPENCLAW_DECISION marker", file=sys.stderr)
+        sys.exit(1)
+    if "END_OPENCLAW_DECISION" not in content:
+        print("Error: decision file missing END_OPENCLAW_DECISION marker", file=sys.stderr)
+        sys.exit(1)
+
+    # 5. Extract fields (key: value format, one per line)
+    fields = {}
+    for line in content.splitlines():
+        line = line.strip()
+        if line.startswith("BEGIN_") or line.startswith("END_"):
+            continue
+        if ":" in line:
+            key, val = line.split(":", 1)
+            fields[key.strip()] = val.strip()
+
+    # 6. Required fields (Phase 5C: next_expected_result is REQUIRED)
+    required_fields = ["goal_id", "iteration", "decision", "requires_human_approval", "reason", "next_expected_result"]
+    missing = [f for f in required_fields if f not in fields or not fields[f]]
+    if missing:
+        print(f"Error: decision file missing required fields: {', '.join(missing)}", file=sys.stderr)
+        sys.exit(1)
+
+    # 7. Validate goal_id match
+    dec_goal_id = fields.get("goal_id", "")
+    if dec_goal_id != goal_id:
+        print(f"Error: Decision goal_id mismatch: {dec_goal_id} != {goal_id}", file=sys.stderr)
+        sys.exit(1)
+
+    # 8. Validate decision value
+    valid_decisions = ["DONE", "NEXT_COMMAND", "REPAIR_COMMAND", "PARTIAL", "BLOCKED", "NEEDS_HUMAN_REVIEW"]
+    decision_value = fields.get("decision", "")
+    if decision_value not in valid_decisions:
+        print(f"Error: Invalid decision value: {decision_value}", file=sys.stderr)
+        print(f"Valid values: {', '.join(valid_decisions)}", file=sys.stderr)
+        sys.exit(1)
+
+    # 9. Update state
+    old_state = current_state
+    state["last_decision"] = decision_file
+    state["updated_at"] = now_iso()
+
+    # Decision → state mapping
+    if decision_value == "DONE":
+        state["current_state"] = "DONE"
+    elif decision_value == "BLOCKED":
+        state["current_state"] = "BLOCKED"
+    elif decision_value == "NEEDS_HUMAN_REVIEW":
+        state["current_state"] = "NEEDS_HUMAN_REVIEW"
+    elif decision_value == "PARTIAL":
+        state["current_state"] = "PARTIAL"
+    elif decision_value in ("NEXT_COMMAND", "REPAIR_COMMAND"):
+        state["current_state"] = "OPENCLAW_PLANNING"
+
+    write_state_atomic(state, state_file)
+    new_state = state["current_state"]
+
+    # 10. Output
+    print(f"Decision ingested: {decision_value} for {goal_id}")
+    print(f"State updated: {old_state} -> {new_state}")
+    print(f"Last decision: {decision_file}")
+
+    if decision_value in ("NEXT_COMMAND", "REPAIR_COMMAND"):
+        print("Next: OpenClaw should generate the next Hermes command and write it to hermes-commands/<next>.md, then set state COMMAND_READY.")
+        print("No command is auto-generated. Use your OpenClaw bot to plan the next command.")
+    elif decision_value == "DONE":
+        print(f"Goal {goal_id} is complete. No further action needed.")
+    elif decision_value in ("BLOCKED", "NEEDS_HUMAN_REVIEW"):
+        print(f"Goal {goal_id} requires human attention. Review the decision file for details.")
+    elif decision_value == "PARTIAL":
+        print(f"Goal {goal_id} is partially complete. Review the decision file and plan next steps.")
+
+    sys.exit(0)
+
+# =====================================================================
+# Mode: --judge-prompt (Phase 5B)
+# =====================================================================
+if judge_mode:
+    if current_state != "HERMES_REPORT_WRITTEN":
+        last_report = state.get("last_report") or "none"
+        print(f"Goal {goal_id} is in state {current_state}. Judge prompt is only available when state is HERMES_REPORT_WRITTEN.")
+        print(f"Current last_report: {last_report}")
+        # Next-step hint per state
+        if current_state in ("INIT", "OPENCLAW_PLANNING"):
+            print("Next step: wait for OpenClaw to generate a command, then run 'agent-loop-relay --once <goal_id>'.")
+        elif current_state in ("COMMAND_READY", "WAITING_HUMAN_APPROVAL"):
+            print("Next step: copy the Hermes command to Hermes, then 'agent-loop-relay --once <goal_id> --mark-dispatched'.")
+        elif current_state in ("DISPATCHED_TO_HERMES", "HERMES_RUNNING"):
+            print(f"Next step: wait for Hermes to return. Expected report path: {expected_report_path(state)}")
+            print("When Hermes notifies, run: agent-loop-relay --once <goal_id> --report-path <path>")
+        elif current_state == "OPENCLAW_JUDGING":
+            print("Next step: OpenClaw is already judging. Wait for the decision via judge-path.")
+        elif current_state in ("DONE", "BLOCKED", "NEEDS_HUMAN_REVIEW", "PARTIAL"):
+            print(f"Next step: goal is in terminal state. No further action needed.")
+        sys.exit(1)
+
+    last_report = state.get("last_report")
+    if not last_report:
+        print("last_report is not set. Please provide --report-path first.")
+        print("Example: agent-loop-relay --once <goal_id> --report-path <absolute_path>")
+        sys.exit(1)
+
+    if not os.path.isfile(last_report):
+        print(f"last_report path does not exist: {last_report}")
+        print("Please verify the report file was written correctly.")
+        sys.exit(1)
+
+    # Print the stable judge prompt (user override #2)
+    print("=== Judge Prompt for OpenClaw ===")
+    print("/skill hermes-agent-loop judge-path")
+    print("")
+    print(f"report_path: {last_report}")
+    print("")
+    print("要求：")
+    print("1. 使用绝对路径读取 canonical report。")
+    print("2. 严格检查 BEGIN_HERMES_REPORT 15 点格式。")
+    print("3. 根据 status 判断 DONE / PARTIAL / REPAIR_COMMAND / BLOCKED / NEEDS_HUMAN_REVIEW。")
+    print("4. 如果判断完成，请输出 BEGIN_OPENCLAW_DECISION。")
+    print("5. 不从 Telegram 文本解析报告正文。")
+    print("=== End of Judge Prompt ===")
+    print("")
+    print("Please copy the above prompt to OpenClaw bot.")
+
+    if mark_judge:
+        advance(state, "OPENCLAW_JUDGING")
+        print("State updated to OPENCLAW_JUDGING.")
+    else:
+        print("State not changed. Use --mark-judging to advance state.")
+    sys.exit(0)
+
+# =====================================================================
+# Mode: --once (Phase 5A flow, with Phase 5B iteration=0 fix)
+# =====================================================================
+
+# --- handle --mark-dispatched flag first ---
+if mark_disp:
+    if current_state not in ("COMMAND_READY", "WAITING_HUMAN_APPROVAL"):
+        print(f"Error: --mark-dispatched only valid in COMMAND_READY or WAITING_HUMAN_APPROVAL (current: {current_state})", file=sys.stderr)
+        sys.exit(1)
+    last_command = state.get("last_command")
+    if not last_command:
+        print("Error: last_command not set; cannot mark dispatched", file=sys.stderr)
+        print("Hint: run 'agent-loop-relay --once <goal_id>' first to print and record the command.", file=sys.stderr)
+        sys.exit(1)
+    advance(state, "DISPATCHED_TO_HERMES")
+    print("Dispatched (user confirmed). Waiting for Hermes to return:")
+    print("HERMES_STATUS: REPORT_WRITTEN")
+    # Phase 5B fix: iteration=0 → show 001.md not 000.md
+    print(f"HERMES_REPORT_PATH: {expected_report_path(state)}")
+    print("")
+    print("Note: relay does NOT call Hermes. You must copy the printed command")
+    print("to Hermes manually, then provide the returned report path:")
+    print(f"  agent-loop-relay --once {goal_id} --report-path <path>")
+    sys.exit(0)
+
+# --- handle --report-path flag ---
+if report_path:
+    if not os.path.isfile(report_path):
+        print(f"Error: --report-path file not found: {report_path}", file=sys.stderr)
+        sys.exit(1)
+    if current_state not in ("DISPATCHED_TO_HERMES", "HERMES_RUNNING", "HERMES_REPORT_WRITTEN"):
+        print(f"Error: --report-path only valid in DISPATCHED_TO_HERMES / HERMES_RUNNING / HERMES_REPORT_WRITTEN (current: {current_state})", file=sys.stderr)
+        sys.exit(1)
+    state["last_report"] = report_path
+    if current_state != "HERMES_REPORT_WRITTEN":
+        advance(state, "HERMES_REPORT_WRITTEN")
+    else:
+        state["updated_at"] = now_iso()
+        write_state_atomic(state, state_file)
+        print(f"updated last_report: {report_path}")
+    print(f"Report received: {report_path}")
+    print("Next: Run 'agent-loop-relay --judge-prompt <goal_id>' to build the judge prompt for OpenClaw.")
+    sys.exit(0)
+
+# --- default: --once <goal_id> only ---
+if current_state in ("INIT", "OPENCLAW_PLANNING"):
+    print(f"Goal {goal_id} is in state {current_state}. Please wait for OpenClaw to generate a command.")
+    sys.exit(0)
+
+if current_state == "COMMAND_READY":
+    cmd = latest_command()
+    if not cmd:
+        print(f"Error: state is COMMAND_READY but no command file found in {goal_dir}/hermes-commands/", file=sys.stderr)
+        sys.exit(1)
+    state["last_command"] = cmd
+    if human_approval_required:
+        advance(state, "WAITING_HUMAN_APPROVAL", prev_state=current_state)
+        print("")
+        print(f"=== Hermes Command for {goal_id} ===")
+        with open(cmd, "r", encoding="utf-8") as cf:
+            sys.stdout.write(cf.read())
+        print("=== End of Command ===")
+        print("")
+        print(f"This command requires human approval (human_approval_required=true).")
+        print(f"Please review the command in: {cmd}")
+        print(f"After approval, mark dispatched manually:")
+        print(f"  agent-loop-relay --once {goal_id} --mark-dispatched")
+    else:
+        # STAY at COMMAND_READY (user override #2 + #4)
+        state["updated_at"] = now_iso()
+        write_state_atomic(state, state_file)
+        print(f"recorded last_command: {cmd}")
+        print("")
+        print(f"=== Hermes Command for {goal_id} ===")
+        with open(cmd, "r", encoding="utf-8") as cf:
+            sys.stdout.write(cf.read())
+        print("=== End of Command ===")
+        print("")
+        print(f"human_approval_required=false. State stays at COMMAND_READY.")
+        print(f"Please copy the above command to Hermes.")
+        print(f"After copying, run:")
+        print(f"  agent-loop-relay --once {goal_id} --mark-dispatched")
+    sys.exit(0)
+
+if current_state == "WAITING_HUMAN_APPROVAL":
+    last_command = state.get("last_command") or "(not set)"
+    print(f"Goal {goal_id} is waiting for human approval.")
+    print(f"Please review the command in: {last_command}")
+    print(f"After approval, mark dispatched manually:")
+    print(f"  agent-loop-relay --once {goal_id} --mark-dispatched")
+    sys.exit(0)
+
+if current_state in ("DISPATCHED_TO_HERMES", "HERMES_RUNNING"):
+    last_report = state.get("last_report")
+    if last_report:
+        print(f"Goal {goal_id} dispatched to Hermes. Waiting for canonical report.")
+        print(f"(last_report already set: {last_report})")
+    else:
+        print(f"Goal {goal_id} dispatched to Hermes. Waiting for canonical report.")
+        print("")
+        print("When Hermes writes the report, it will notify via Telegram:")
+        print("HERMES_STATUS: REPORT_WRITTEN")
+        # Phase 5B fix: iteration=0 → show 001.md
+        print(f"HERMES_REPORT_PATH: {expected_report_path(state)}")
+        print("")
+        print(f"Provide the actual path when it arrives:")
+        print(f"  agent-loop-relay --once {goal_id} --report-path <path>")
+    sys.exit(0)
+
+if current_state == "HERMES_REPORT_WRITTEN":
+    print(f"Goal {goal_id} has a report. Next step is to generate the judge prompt for OpenClaw.")
+    print(f"Run: agent-loop-relay --judge-prompt {goal_id}")
+    last_report = state.get("last_report")
+    if last_report:
+        print(f"(last_report already recorded: {last_report})")
+    sys.exit(0)
+
+if current_state == "OPENCLAW_JUDGING":
+    print(f"Goal {goal_id} is being judged by OpenClaw. Waiting for decision.")
+    print(f"When OpenClaw finishes, use 'agent-loop-relay --decision-path {goal_id} <decision-file>' to ingest the decision.")
+    sys.exit(0)
+
+if current_state in ("DONE", "BLOCKED", "NEEDS_HUMAN_REVIEW", "PARTIAL"):
+    print(f"Goal {goal_id} is in terminal state: {current_state}. No further action needed.")
+    last_report = state.get("last_report") or "(none)"
+    last_decision = state.get("last_decision") or "(none)"
+    print(f"Last report: {last_report}")
+    print(f"Last decision: {last_decision}")
+    sys.exit(0)
+
+print(f"Error: unknown state: {current_state}", file=sys.stderr)
+sys.exit(1)
+PYEOF

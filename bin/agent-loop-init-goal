@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+# agent-loop-init-goal — create a new goal directory with skeleton files.
+#
+# Usage: agent-loop-init-goal <goal_id> [description]
+#
+# Creates:
+#   ~/.agent-loop/goals/<goal_id>/
+#   ~/.agent-loop/goals/<goal_id>/hermes-reports/
+#   ~/.agent-loop/goals/<goal_id>/artifacts/
+#   ~/.agent-loop/goals/<goal_id>/openclaw-decisions/
+#   ~/.agent-loop/goals/<goal_id>/hermes-commands/
+#   ~/.agent-loop/goals/<goal_id>/goal.md
+#   ~/.agent-loop/goals/<goal_id>/state.json
+#
+# Refuses to overwrite an existing goal.
+
+set -euo pipefail
+
+if [ "$#" -lt 1 ]; then
+    echo "Usage: agent-loop-init-goal <goal_id> [description]" >&2
+    exit 2
+fi
+
+GOAL_ID="$1"
+DESCRIPTION="${2:-}"
+
+# Validate goal_id: alphanumeric + dash + underscore, no slashes / dots.
+if ! echo "$GOAL_ID" | grep -qE '^[a-zA-Z0-9_-]+$'; then
+    echo "Error: goal_id must match [a-zA-Z0-9_-]+ (got: $GOAL_ID)" >&2
+    exit 2
+fi
+
+GOAL_ROOT="~/.agent-loop/goals"
+GOAL_DIR="${GOAL_ROOT}/${GOAL_ID}"
+
+# Refuse to overwrite.
+if [ -d "$GOAL_DIR" ]; then
+    echo "Goal already exists: ${GOAL_ID}" >&2
+    echo "Path: ${GOAL_DIR}" >&2
+    exit 1
+fi
+
+# Create directory skeleton.
+mkdir -p "${GOAL_DIR}/hermes-reports" \
+         "${GOAL_DIR}/artifacts" \
+         "${GOAL_DIR}/openclaw-decisions" \
+         "${GOAL_DIR}/hermes-commands"
+
+# ISO timestamp for created_at / updated_at.
+TIMESTAMP="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+
+# Write goal.md
+cat > "${GOAL_DIR}/goal.md" <<EOF
+# Goal: ${GOAL_ID}
+
+## 描述
+
+${DESCRIPTION}
+
+## 状态
+
+- 当前状态：INIT
+- 创建时间：${TIMESTAMP}
+- 创建人：agent-loop-init-goal
+EOF
+
+# Write state.json via Python stdlib (safe — no fragile sed).
+python3 - "$GOAL_ID" "$TIMESTAMP" "$GOAL_DIR" <<'PYEOF'
+import json, sys
+
+goal_id = sys.argv[1]
+timestamp = sys.argv[2]
+goal_dir = sys.argv[3]
+
+state = {
+    "goal_id": goal_id,
+    "current_state": "INIT",
+    "iteration": 0,
+    "last_command": None,
+    "last_report": None,
+    "last_decision": None,
+    "human_approval_required": False,
+    "human_approved": None,
+    "created_at": timestamp,
+    "updated_at": timestamp,
+}
+
+with open(f"{goal_dir}/state.json", "w", encoding="utf-8") as f:
+    json.dump(state, f, indent=2, ensure_ascii=False)
+    f.write("\n")
+PYEOF
+
+echo "Goal created: ${GOAL_ID}"
+echo "Path: ${GOAL_DIR}"
+echo "State: INIT"
