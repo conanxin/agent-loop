@@ -6,6 +6,20 @@ OpenClaw ↔️ Hermes dual-agent file-based relay loop protocol.
 
 ## Quick Install
 
+### Skills Quick Install
+
+```bash
+./scripts/install-all.sh
+```
+
+Install Skills only:
+
+```bash
+./scripts/install-skills.sh
+```
+
+### Full Install
+
 ```bash
 git clone https://github.com/conanxin/agent-loop.git
 cd agent-loop
@@ -254,6 +268,19 @@ agent-loop-show test
 - [SCHEMAS.md](docs/SCHEMAS.md) — Protocol schemas
 - [SAFETY_BOUNDARIES.md](docs/SAFETY_BOUNDARIES.md) — Safety rules
 - [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) — Common issues
+- [AGENT_SKILLS.md](docs/AGENT_SKILLS.md) — OpenClaw/Hermes skills
+- [SKILL_DESIGN.zh-CN.md](docs/SKILL_DESIGN.zh-CN.md) — Skill design (zh-CN)
+- [AGENT_ROLES.zh-CN.md](docs/AGENT_ROLES.zh-CN.md) — Agent roles (zh-CN)
+
+## Common Protocol Drift Issues
+
+| Issue | Cause | Fix |
+|---|---|---|
+| Old notification format (`REPORT_WRITTEN\n/path`) | Used shorthand instead of key:value | Use `HERMES_STATUS: REPORT_WRITTEN` + `HERMES_REPORT_PATH: <path>` |
+| Markdown report instead of canonical | Hermes writes `# Report` instead of `BEGIN_HERMES_REPORT` block | Use strict 11-field `BEGIN_HERMES_REPORT` format |
+| Scope expansion (`make validate` → `make test`) | Hermes runs additional commands | Stop after requested command passes |
+| Multiple `BEGIN_HERMES_COMMAND` blocks | OpenClaw plan mode emits inspect + implement | Output exactly one main command block |
+| Wrong judge prompt format | Inline path instead of separate line | Use `/skill hermes-agent-loop judge-path` + `report_path: <path>` on separate lines |
 
 ## Examples
 

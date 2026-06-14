@@ -2,6 +2,18 @@
 
 OpenClaw ↔️ Hermes 双 Agent 文件中继循环协议。
 
+## Skills Quick Install
+
+```bash
+./scripts/install-all.sh
+```
+
+单独安装 Skills：
+
+```bash
+./scripts/install-skills.sh
+```
+
 ## 项目介绍
 
 agent-loop 是一个**基于文件系统**的双 Agent 协作协议：
@@ -54,6 +66,22 @@ cd agent-loop
 ./scripts/install-all.sh
 export PATH="$HOME/.agent-loop/bin:$PATH"
 ```
+
+### Skills 单独安装
+
+```bash
+./scripts/install-skills.sh
+```
+
+## 常见协议漂移问题
+
+| 问题 | 原因 | 修复 |
+|---|---|---|
+| 旧通知格式（`REPORT_WRITTEN\n/path`） | 使用了简写 | 使用 `HERMES_STATUS: REPORT_WRITTEN` + `HERMES_REPORT_PATH: <path>` |
+| Markdown 报告代替 canonical | Hermes 写了 `# Report` | 使用严格 11 字段 `BEGIN_HERMES_REPORT` |
+| 范围扩大（`make validate` → `make test`） | Hermes 跑了额外命令 | 指定命令通过后停止 |
+| 多个 `BEGIN_HERMES_COMMAND` 块 | OpenClaw plan 模式输出了 inspect + implement | 只输出一个主命令块 |
+| 错误的 judge prompt 格式 | 路径写在同一行 | 使用 `/skill hermes-agent-loop judge-path` + `report_path: <path>` 分两行 |
 
 ### 分步安装
 

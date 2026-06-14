@@ -14,11 +14,46 @@ Invoke with mode: `plan`, `judge`, `judge-path`, or `auto-spec`.
 
 ### 1. plan — Generate first Hermes command
 
+**Rule**: OpenClaw is Planner/Judge, NEVER Executor. OpenClaw plans and judges; Hermes executes.
+
 **Input:** User goal (plain text or structured). Optional: project path, constraints.
 
 **Output:**
 - `BEGIN_OPENCLAW_DECISION` block (decision = NEXT_COMMAND, iteration = 1)
-- `BEGIN_HERMES_COMMAND` block with first command
+- **EXACTLY ONE** main `BEGIN_HERMES_COMMAND` block with the first command
+
+**Scope rule**: For multi-phase tasks, output ONLY the next immediate command. Do NOT output inspect + implement as two separate executable blocks. Do NOT output multiple command blocks in one response. If the task has multiple phases, plan them mentally but emit only the first phase's command. The next phase will be planned after the judge step.
+
+**Human review**: The `requires_human_approval` field in the decision block is the human checkpoint. Do NOT include a second command block that could be accidentally executed.
+
+**Anti-drift example — WRONG (multiple commands):**
+```
+BEGIN_OPENCLAW_DECISION
+...
+END_OPENCLAW_DECISION
+
+BEGIN_HERMES_COMMAND
+command_type: inspect
+...
+END_HERMES_COMMAND
+
+BEGIN_HERMES_COMMAND
+command_type: implement
+...
+END_HERMES_COMMAND
+```
+
+**Anti-drift example — RIGHT (single command):**
+```
+BEGIN_OPENCLAW_DECISION
+...
+END_OPENCLAW_DECISION
+
+BEGIN_HERMES_COMMAND
+command_type: inspect
+...
+END_HERMES_COMMAND
+```
 
 ### 2. judge — Evaluate Hermes report from Telegram text and decide next step
 
@@ -51,7 +86,7 @@ HERMES_REPORT_PATH: <absolute-path-to-report.md>
 
 **OpenClaw then reads `<absolute-path-to-report.md>`** and uses its content as the sole source of truth for `BEGIN_HERMES_REPORT`.
 
-**judge-path strict validation checklist:**
+**judge-path strict validation checklist (15 format checks on the 11-field schema):**
 1. File must exist at `report_path`. If not → `BLOCKED`.
 2. First non-whitespace line must be `BEGIN_HERMES_REPORT`.
 3. Must contain `goal_id:` with a value.
@@ -306,10 +341,10 @@ END_HERMES_COMMAND
 **Input:** Hermes lightweight status:
 ```
 HERMES_STATUS: REPORT_WRITTEN
-HERMES_REPORT_PATH: /home/conanxin/.hermes/workspace/reports/hermes-report-001.md
+HERMES_REPORT_PATH: ~/.hermes/workspace/reports/hermes-report-001.md
 ```
 
-**OpenClaw reads file at `/home/conanxin/.hermes/workspace/reports/hermes-report-001.md`:**
+**OpenClaw reads file at `~/.hermes/workspace/reports/hermes-report-001.md`:**
 ```
 BEGIN_HERMES_REPORT
 goal_id: auth-express-20260614
@@ -320,7 +355,7 @@ changed_files: none
 commands_run: ls -la, cat package.json, grep -r "auth\|passport\|jwt" --include="*.js" .
 validation_result: Confirmed: no auth middleware, no user models, no session config
 commit: none
-report_path: /home/conanxin/.hermes/workspace/reports/hermes-report-001.md
+report_path: ~/.hermes/workspace/reports/hermes-report-001.md
 issues: none
 recommendation: Implement passport-local strategy with express-session
 END_HERMES_REPORT
@@ -353,7 +388,7 @@ END_HERMES_COMMAND
 **Input:** Hermes lightweight status:
 ```
 HERMES_STATUS: REPORT_WRITTEN
-HERMES_REPORT_PATH: /home/conanxin/.hermes/workspace/reports/missing-report.md
+HERMES_REPORT_PATH: ~/.hermes/workspace/reports/missing-report.md
 ```
 
 **OpenClaw attempts to read file — file does not exist.**
@@ -365,7 +400,7 @@ goal_id: auth-express-20260614
 iteration: 1
 decision: BLOCKED
 requires_human_approval: true
-reason: Hermes reported REPORT_WRITTEN but file at /home/conanxin/.hermes/workspace/reports/missing-report.md does not exist. File-based report protocol requires the file to be present.
+reason: Hermes reported a report was written but file at ~/.hermes/workspace/reports/missing-report.md does not exist. File-based report protocol requires the file to be present.
 next_expected_result: Hermes re-runs and writes report to a valid path, or switches to inline judge mode
 END_OPENCLAW_DECISION
 
@@ -453,5 +488,6 @@ HUMAN REVIEW POINTS
 1.1.0 — 2026-06-14
 
 Changelog:
+- v1.2.0: Hardened plan mode to emit exactly one main command block. Clarified 11-field schema vs 15-point format validation. Fixed judge prompt to use separate-line format (`/skill hermes-agent-loop judge-path` + `report_path:`). Added anti-drift examples for old notification format, multi-command emission, and scope expansion.
 - v1.1.0: Added `judge-path` mode for file-based report reading (bypasses Telegram transport reformatting). Added Hermes lightweight notification format (`HERMES_STATUS` + `HERMES_REPORT_PATH`). Added 15-point strict validation checklist for judge-path.
 - v1.0.0: Initial skill with `plan`, `judge`, `auto-spec` modes.

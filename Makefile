@@ -31,6 +31,11 @@ validate:
 	! grep -R "xoxb-" . --exclude-dir=.git --exclude-dir=docs --exclude=Makefile || (echo "WARNING: xoxb- found"; exit 1)
 	@echo "=== Validation PASSED ==="
 
+validate-skills:
+	@echo "=== Validating skills ==="
+	@bash -n scripts/validate-skills.sh
+	@scripts/validate-skills.sh
+
 smoke:
 	./scripts/smoke-test.sh
 
