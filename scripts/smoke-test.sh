@@ -1,12 +1,26 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-export PATH="$HOME/.agent-loop/bin:$PATH"
+# Use AGENT_LOOP_HOME (defaults to ~/.agent-loop) for both
+# - Where tools are looked up (PATH)
+# - Where goals are stored
+AGENT_LOOP_HOME="${AGENT_LOOP_HOME:-$HOME/.agent-loop}"
+export PATH="$AGENT_LOOP_HOME/bin:$PATH"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_BIN_DIR="$SCRIPT_DIR/../bin"
+
+# In CI (when AGENT_LOOP_HOME points to a temp dir and bin/ is empty),
+# fall back to the repo's bin/ directory.
+if [ ! -x "$AGENT_LOOP_HOME/bin/agent-loop-init-goal" ] && [ -d "$REPO_BIN_DIR" ]; then
+    export PATH="$REPO_BIN_DIR:$PATH"
+fi
 
 GOAL_ID="smoke-test-$(date +%s)"
-GOAL_DIR="$HOME/.agent-loop/goals/$GOAL_ID"
+GOAL_DIR="$AGENT_LOOP_HOME/goals/$GOAL_ID"
 
 echo "=== agent-loop Smoke Test ==="
+echo "AGENT_LOOP_HOME: $AGENT_LOOP_HOME"
 echo "Goal ID: $GOAL_ID"
 
 # Step 1: Initialize goal

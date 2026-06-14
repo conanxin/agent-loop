@@ -16,6 +16,10 @@
 
 set -euo pipefail
 
+# Allow overriding the agent-loop home (useful for CI/tests).
+AGENT_LOOP_HOME="${AGENT_LOOP_HOME:-$HOME/.agent-loop}"
+AGENT_LOOP_HOME="${AGENT_LOOP_HOME/#\~/$HOME}"
+
 if [ "$#" -lt 1 ]; then
     echo "Usage: agent-loop-init-goal <goal_id> [description]" >&2
     exit 2
@@ -30,7 +34,7 @@ if ! echo "$GOAL_ID" | grep -qE '^[a-zA-Z0-9_-]+$'; then
     exit 2
 fi
 
-GOAL_ROOT="~/.agent-loop/goals"
+GOAL_ROOT="${AGENT_LOOP_HOME}/goals"
 GOAL_DIR="${GOAL_ROOT}/${GOAL_ID}"
 
 # Refuse to overwrite.

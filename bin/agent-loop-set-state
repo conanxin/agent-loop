@@ -14,6 +14,10 @@
 
 set -euo pipefail
 
+# Allow overriding the agent-loop home (useful for CI/tests).
+AGENT_LOOP_HOME="${AGENT_LOOP_HOME:-$HOME/.agent-loop}"
+AGENT_LOOP_HOME="${AGENT_LOOP_HOME/#\~/$HOME}"
+
 if [ "$#" -ne 2 ]; then
     echo "Usage: agent-loop-set-state <goal_id> <state>" >&2
     exit 2
@@ -41,7 +45,7 @@ if [ "$VALID" -ne 1 ]; then
     exit 1
 fi
 
-GOAL_DIR="~/.agent-loop/goals/${GOAL_ID}"
+GOAL_DIR="${AGENT_LOOP_HOME}/goals/${GOAL_ID}"
 STATE_FILE="${GOAL_DIR}/state.json"
 
 if [ ! -f "$STATE_FILE" ]; then
