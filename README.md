@@ -1,5 +1,7 @@
 # agent-loop
 
+[![CI](https://github.com/conanxin/agent-loop/actions/workflows/ci.yml/badge.svg)](https://github.com/conanxin/agent-loop/actions/workflows/ci.yml)
+
 [中文说明 / Chinese Guide](README.zh-CN.md)
 
 OpenClaw ↔️ Hermes dual-agent file-based relay loop protocol.
@@ -258,6 +260,26 @@ ls -la ${HERMES_SKILLS_DIR:-$HOME/.hermes/skills}/openclaw-command-executor/
 agent-loop-init-goal test "Test goal"
 agent-loop-set-state test COMMAND_READY
 agent-loop-show test
+```
+
+## Continuous Integration
+
+The repository has a GitHub Actions workflow at `.github/workflows/ci.yml` that runs on every push/PR to main. It enforces:
+
+- `bash -n` on all scripts and bin tools
+- `scripts/validate-skills.sh` for skill content validation
+- `make validate` for project structure and secret scanning
+- `scripts/smoke-test.sh` end-to-end test in an isolated `AGENT_LOOP_HOME`
+
+The CI badge at the top of this README reflects the current build status.
+
+Run the same checks locally:
+
+```bash
+chmod +x scripts/*.sh bin/agent-loop-*
+make validate
+./scripts/validate-skills.sh
+AGENT_LOOP_HOME=/tmp/agent-loop-smoke ./scripts/smoke-test.sh
 ```
 
 ## Documentation

@@ -1,0 +1,72 @@
+name: Agent Loop CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'skills/**'
+      - 'scripts/**'
+      - 'bin/**'
+      - 'Makefile'
+      - '.github/workflows/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'skills/**'
+      - 'scripts/**'
+      - 'bin/**'
+      - 'Makefile'
+      - '.github/workflows/**'
+  workflow_dispatch:
+
+jobs:
+  validate:
+    name: Validate scripts + skills
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Display tool versions
+        run: |
+          bash --version
+          make --version
+
+      - name: Make scripts executable
+        run: chmod +x scripts/*.sh bin/agent-loop-*
+
+      - name: bash -n scripts
+        run: |
+          bash -n scripts/install.sh
+          bash -n scripts/install-skills.sh
+          bash -n scripts/install-all.sh
+          bash -n scripts/smoke-test.sh
+          bash -n scripts/validate-skills.sh
+
+      - name: bash -n bin
+        run: |
+          bash -n bin/agent-loop-init-goal
+          bash -n bin/agent-loop-set-state
+          bash -n bin/agent-loop-show
+          bash -n bin/agent-loop-relay
+
+      - name: validate-skills.sh
+        run: ./scripts/validate-skills.sh
+
+      - name: make validate
+        run: make validate
+
+  smoke:
+    name: Smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Make scripts executable
+        run: chmod +x scripts/*.sh bin/agent-loop-*
+
+      - name: Run smoke test
+        env:
+          AGENT_LOOP_HOME: ${{ runner.temp }}/agent-loop
+        run: ./scripts/smoke-test.sh

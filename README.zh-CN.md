@@ -1,5 +1,7 @@
 # agent-loop 中文指南
 
+[![CI](https://github.com/conanxin/agent-loop/actions/workflows/ci.yml/badge.svg)](https://github.com/conanxin/agent-loop/actions/workflows/ci.yml)
+
 OpenClaw ↔️ Hermes 双 Agent 文件中继循环协议。
 
 ## Skills Quick Install
@@ -54,6 +56,26 @@ HERMES_REPORT_PATH: ~/.agent-loop/goals/my-project/hermes-reports/001.md
        ▼                                         ▼
 openclaw-decisions/                      hermes-commands/
 hermes-reports/                          hermes-reports/
+```
+
+## 持续集成
+
+仓库在 `.github/workflows/ci.yml` 包含 GitHub Actions 工作流，每次 push/PR 到 main 时运行。它强制执行：
+
+- 所有脚本和 bin 工具的 `bash -n`
+- `scripts/validate-skills.sh` 校验 skill 内容
+- `make validate` 检查项目结构和密钥
+- `scripts/smoke-test.sh` 在隔离的 `AGENT_LOOP_HOME` 中运行端到端测试
+
+README 顶部的 CI 徽章反映当前构建状态。
+
+本地运行相同检查：
+
+```bash
+chmod +x scripts/*.sh bin/agent-loop-*
+make validate
+./scripts/validate-skills.sh
+AGENT_LOOP_HOME=/tmp/agent-loop-smoke ./scripts/smoke-test.sh
 ```
 
 ## 5 分钟快速安装
