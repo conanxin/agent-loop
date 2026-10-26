@@ -44,6 +44,10 @@ Absolute paths in the snapshot are local-only, not remote download links.
 For the optional multi-Agent CX-PAN plan and legacy-goal compatibility notes,
 see [CX-PAN integration](docs/CX_PAN_INTEGRATION.md).
 
+A separate, opt-in cloud task Hub + local Claude Code worker was first tested on
+2026-10-26. The original manual core remains unchanged. See
+[bridge/README.md](bridge/README.md) for the tested CLI and known limitations.
+
 ## Why agent-loop?
 
 When two AI agents (OpenClaw for planning/judging, Hermes for execution/reporting) collaborate, they need a reliable communication channel. Telegram is convenient but has critical limitations:

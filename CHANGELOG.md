@@ -2,6 +2,15 @@
 
 ## Unreleased (2026-10-26)
 
+### Optional CX-PAN bridge pilot
+- Added a loopback-only, bearer-authorized HTTP/SQLite Hub on a separate cloud host.
+- Added CLI submit/status/result, outbound WSL2 Worker, and registered echo/Claude Code read-only capabilities.
+- Added cloud SSH forward and worker user-service templates; the core manual relay remains independent.
+- Passed real cross-host echo, idempotency, read-only Claude Code round-trip and queued-task cloud restart recovery.
+- Added four isolated Hub/HTTP regression tests (total 16 core + bridge tests).
+- Documented limitations: no MCP/A2A façade yet, no unapproved shell tasks, no retry of interrupted RUNNING tasks.
+
+
 - Strict canonical field, goal ID, integer iteration, path and decision validation.
 - Correct iteration tracking, numeric command sorting, and SHA-256 change detection.
 - Isolated positive/negative regression tests and read-only JSON status export.

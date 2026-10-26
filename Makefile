@@ -24,6 +24,9 @@ validate:
 	@test -f docs/SCHEMAS.md
 	@test -f docs/CX_PAN_INTEGRATION.md
 	@test -f bin/agent-loop-status-json
+	@test -f bridge/hub.py
+	@test -f bridge/client.py
+	@test -f bridge/worker.py
 	@test -f docs/SAFETY_BOUNDARIES.md
 	@test -f docs/TROUBLESHOOTING.md
 	@echo "=== Checking for secrets ==="

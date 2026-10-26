@@ -1,0 +1,12 @@
+[Unit]
+Description=CX-PAN authenticated SSH tunnel to Tencent cloud loopback
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/ssh -N -T -o BatchMode=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -L 127.0.0.1:18487:127.0.0.1:18487 tencent
+Restart=on-failure
+RestartSec=8
+
+[Install]
+WantedBy=default.target

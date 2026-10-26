@@ -1,0 +1,13 @@
+[Unit]
+Description=CX-PAN read-only local Claude/echo worker
+After=network-online.target cx-pan-ssh-tunnel.service
+
+[Service]
+Type=simple
+WorkingDirectory=%h/workspace/projects/agent-loop/bridge
+ExecStart=/usr/bin/python3 %h/workspace/projects/agent-loop/bridge/worker.py --interval 20 --target both
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target

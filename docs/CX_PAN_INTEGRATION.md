@@ -68,3 +68,18 @@ git diff --check
 ~~~
 
 以上只验证源码，不影响已安装的旧版 CLI。**状态：SOURCE_PATCHED / ISOLATED_TESTED / NOT_INSTALLED_TO_LIVE_HOME / CX_PAN_HUB_NOT_DEPLOYED**。
+
+
+## 2026-10-26 增量：P1 Hub + Claude Code 已实机完成（后于上文旧状态）
+
+早前本页中的「CX_PAN_HUB_NOT_DEPLOYED」是当时快照，不再代表最新状态。
+已在现有 Git checkout 的独立 `bridge/` 目录实现 HTTP+SQLite 任务账本、受认证的 CLI、SSH 加密端口转发，以及 WSL2 上只读 Claude Code Worker。腾讯云 `cx-pan-hub.service`（loopback only）、本地 `cx-pan-ssh-tunnel.service` 与 `cx-pan-readonly-worker.service` 均已启用。
+
+实机 P1 验证：
+- ChatGPT CXRE 发 echo 请求 → 云端 SQLite QUEUED → 本地 Worker CLAIMED → COMPLETED，含 ECHO_OK 正文与 run_id。
+- 同一 idempotency_key 重复提交命中同一个 task_id，云端只出现一次 QUEUED/CLAIMED/COMPLETED；不同正文重用同一 key 在隔离测试中返回 409。
+- 两次 Claude Code v2.1.118 真正读取本地仓库，返回中文报告及 Claude session/run ID，其中第二次完全由常驻 Worker 自动领取，没有人工执行 Claude 命令。
+- 人为停用本地 Worker → 提交任务保持 QUEUED → 重启**新**云端 Hub 后仍 QUEUED → 重启 Worker 后自动执行并返回 ECHO_OK。
+- 16 项核心 + Hub 自动化回归测试全部 PASS。没有修改既有 19 个历史 goal，没有重启 Hermes/OpenClaw，也没有把 Hub 原生端口暴露到公网。
+
+详见 [可选 Bridge 使用手册](../bridge/README.md)。最新状态：`CLOUD_HUB_ACTIVE / LOCAL_SSH_TUNNEL_ACTIVE / LOCAL_WORKER_ACTIVE / ECHO_E2E_PASS / CLAUDE_READONLY_E2E_PASS / QUEUED_RESTART_PASS`。限制：**不是**任意 ChatGPT/Claude 网页聊天之间互相远程唤醒；尚无独立 MCP/A2A 公网工具、未对接 Hermes/OpenClaw 任务执行、未实现 RUNNING 崩溃安全恢复。后续对这些能力单独验收。

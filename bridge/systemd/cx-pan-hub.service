@@ -1,0 +1,13 @@
+[Unit]
+Description=CX-PAN P1 lightweight task hub (loopback only)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/cx-pan-hub
+ExecStart=/usr/bin/python3 %h/cx-pan-hub/hub.py --host 127.0.0.1 --port 18487
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
