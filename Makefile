@@ -30,10 +30,10 @@ validate:
 	@test -f docs/SAFETY_BOUNDARIES.md
 	@test -f docs/TROUBLESHOOTING.md
 	@echo "=== Checking for secrets ==="
-	! grep -R "BOT_TOKEN" . --exclude-dir=.git --exclude-dir=docs --exclude=Makefile || (echo "WARNING: BOT_TOKEN found"; exit 1)
-	! grep -R "TELEGRAM_TOKEN" . --exclude-dir=.git --exclude-dir=docs --exclude=Makefile || (echo "WARNING: TELEGRAM_TOKEN found"; exit 1)
-	! grep -R "ghp_" . --exclude-dir=.git --exclude-dir=docs --exclude=Makefile || (echo "WARNING: ghp_ found"; exit 1)
-	! grep -R "xoxb-" . --exclude-dir=.git --exclude-dir=docs --exclude=Makefile || (echo "WARNING: xoxb- found"; exit 1)
+	! grep -R "BOT_TOKEN" . --exclude-dir=__pycache__ --exclude-dir=.git --exclude-dir=docs --exclude=Makefile || (echo "WARNING: BOT_TOKEN found"; exit 1)
+	! grep -R "TELEGRAM_TOKEN" . --exclude-dir=__pycache__ --exclude-dir=.git --exclude-dir=docs --exclude=Makefile || (echo "WARNING: TELEGRAM_TOKEN found"; exit 1)
+	! grep -R "ghp_" . --exclude-dir=__pycache__ --exclude-dir=.git --exclude-dir=docs --exclude=Makefile || (echo "WARNING: ghp_ found"; exit 1)
+	! grep -R "xoxb-" . --exclude-dir=__pycache__ --exclude-dir=.git --exclude-dir=docs --exclude=Makefile || (echo "WARNING: xoxb- found"; exit 1)
 	@echo "=== Validation PASSED ==="
 
 validate-skills:

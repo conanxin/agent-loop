@@ -2,6 +2,15 @@
 
 ## Unreleased (2026-10-26)
 
+### P2 incremental gateway health and stale-task visibility
+- Safe Claude Code failure classification without copying raw unsuccessful model output.
+- Added explicit read-only gateway health capabilities for Hermes and OpenClaw;
+  no unrestricted agent turns, privileged shell, or configuration changes.
+- Added worker heartbeat and execution_health on task read; stale RUNNING
+  tasks require review and are never automatically replayed.
+- Added isolated negative tests for heartbeat identity and 180s stale detection.
+- Preserved the opt-in core/bridge separation and prior task database schema.
+
 ### Optional CX-PAN bridge pilot
 - Added a loopback-only, bearer-authorized HTTP/SQLite Hub on a separate cloud host.
 - Added CLI submit/status/result, outbound WSL2 Worker, and registered echo/Claude Code read-only capabilities.

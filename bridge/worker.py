@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import sys
 import time
+import threading
 import uuid
 from pathlib import Path
 from client import request_json
@@ -19,12 +20,60 @@ WORKER_ID = os.getenv("CX_PAN_WORKER_ID", "wsl2-readonly-worker")
 REPO = Path.home() / "workspace/projects/agent-loop"
 CLAUDE_EXE = os.getenv("CX_PAN_CLAUDE_BIN", str(Path.home() / ".local/bin/claude"))
 CLAUDE_MODEL = os.getenv("CX_PAN_CLAUDE_MODEL", "haiku")
+HEALTH_TARGETS = {
+    "hermes.health.local": ("hermes-gateway.service", "hermes"),
+    "openclaw.health.local": ("openclaw-gateway.service", "openclaw"),
+}
+AVAILABLE_TARGETS = (
+    "echo.local", "claude.code.local",
+    "hermes.health.local", "openclaw.health.local"
+)
+
+
+def read_gateway_health(target):
+    service, binary = HEALTH_TARGETS[target]
+    # Read-only service status and version. No model turn, shell, or Gateway API.
+    systemd = subprocess.run(
+        ["systemctl", "--user", "is-active", service],
+        capture_output=True, text=True, timeout=8
+    )
+    exe = str(Path.home() / ".local/bin" / binary)
+    node_dir = str(Path.home() / ".local/share/fnm/node-versions/v24.20.0/installation/bin")
+    env = {**os.environ, "PATH": node_dir + os.pathsep + os.environ.get("PATH", "")}
+    version = subprocess.run(
+        [exe, "--version"], capture_output=True, text=True,
+        timeout=12, env=env, stdin=subprocess.DEVNULL
+    )
+    if version.returncode != 0:
+        raise RuntimeError(binary + " version command failed")
+    state = systemd.stdout.strip() or "unknown"
+    first = next((line.strip() for line in version.stdout.splitlines() if line.strip()), "")
+    return json.dumps({
+        "agent": binary, "service": service,
+        "gateway_state": state, "cli_version": first,
+        "mode": "read_only_health_check", "model_invoked": False
+    }, ensure_ascii=False), "health:" + str(uuid.uuid4())
+
+
+def heartbeat_until_stopped(stop, task):
+    payload = {
+        "task_id": task["task_id"], "attempt_id": task["attempt_id"],
+        "worker_id": WORKER_ID
+    }
+    while not stop.wait(20):
+        try:
+            request_json("POST", "/v1/workers/heartbeat", payload)
+        except Exception:
+            # Report will still be attempted; stale status becomes visible in Hub.
+            pass
 
 
 def execute(task):
     target = task["target"]
     if target == "echo.local":
         return f"ECHO_OK: {task['goal']}", "echo:" + str(uuid.uuid4())
+    if target in HEALTH_TARGETS and task["capability"] == "gateway.health" and task["repo_id"] == "none":
+        return read_gateway_health(target)
     if target != "claude.code.local" or task["repo_id"] != "agent-loop":
         raise ValueError("unsupported worker task")
     if not REPO.joinpath(".git").is_dir():
@@ -55,8 +104,22 @@ def execute(task):
         env={**os.environ, "CI": "1"}, stdin=subprocess.DEVNULL
     )
     if proc.returncode != 0:
-        raise RuntimeError(f"Claude Code exited {proc.returncode}: " +
-                           proc.stderr[-1000:])
+        # The CLI often reports provider failures in JSON stdout, not stderr.
+        # Keep only a short machine status identifier, never raw session text.
+        try:
+            failure = json.loads(proc.stdout)
+            subtype = failure.get("subtype") or failure.get("error_type") or "unknown"
+            if not isinstance(subtype, str) or not (
+                1 <= len(subtype) <= 80 and
+                all(c.isascii() and (c.isalnum() or c in "-_.") for c in subtype)
+            ):
+                subtype = "unclassified"
+        except (json.JSONDecodeError, TypeError, AttributeError):
+            subtype = "no_json_response"
+        raise RuntimeError(
+            f"Claude Code exited {proc.returncode}; result_subtype={subtype}; "
+            f"stdout_bytes={len(proc.stdout or '')}; stderr_bytes={len(proc.stderr or '')}"
+        )
     try:
         obj = json.loads(proc.stdout)
     except json.JSONDecodeError as exc:
@@ -80,12 +143,22 @@ def run_once(targets):
         return False
     task_id = task["task_id"]
     print(f"CLAIMED task_id={task_id} target={task['target']}", flush=True)
+    stop = threading.Event()
+    thread = threading.Thread(
+        target=heartbeat_until_stopped, args=(stop, task),
+        daemon=True, name="cxpan-heartbeat"
+    )
+    thread.start()
     try:
-        result, run_id = execute(task)
-        status, error = "COMPLETED", ""
-    except Exception as exc:
-        result, run_id = "", "failed:" + str(uuid.uuid4())
-        status, error = "FAILED", f"{type(exc).__name__}: {str(exc)}"[:4000]
+        try:
+            result, run_id = execute(task)
+            status, error = "COMPLETED", ""
+        except Exception as exc:
+            result, run_id = "", "failed:" + str(uuid.uuid4())
+            status, error = "FAILED", f"{type(exc).__name__}: {str(exc)}"[:4000]
+    finally:
+        stop.set()
+        thread.join(timeout=2)
     request_json("POST", "/v1/workers/report", {
         "task_id": task_id,
         "attempt_id": task["attempt_id"],
@@ -103,10 +176,9 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--once", action="store_true")
     parser.add_argument("--interval", type=int, default=15)
-    parser.add_argument("--target", choices=("echo.local", "claude.code.local",
-                                             "both"), default="both")
+    parser.add_argument("--target", choices=(*AVAILABLE_TARGETS, "both"), default="both")
     args = parser.parse_args()
-    targets = ["echo.local", "claude.code.local"] if args.target == "both" else [args.target]
+    targets = list(AVAILABLE_TARGETS) if args.target == "both" else [args.target]
     if args.once:
         run_once(targets)
         return

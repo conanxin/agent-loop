@@ -24,7 +24,7 @@ agent-loop 最初只解决 OpenClaw 规划/审核 与 Hermes 执行/汇报 之�
 
 跨电脑文件路径默认不可远程读取；真正跨云端执行需由独立 CX-PAN Hub/Adapter 提供，不能把 JSON 状态当作网络互联已经完成。历史兼容边界详见 [CX-PAN 集成设计](docs/CX_PAN_INTEGRATION.md)。
 
-2026-10-26 已在可选的 `bridge/` 中新增并实测云端任务队列 + 本地 Claude Code 只读 Worker，原手工 relay 不变。详见 [bridge 使用与验收](bridge/README.md)。
+2026-10-26 已在可选的 `bridge/` 中新增并实测云端任务队列 + 本地 Claude Code 只读 Worker，原手工 relay 不变。详见 [bridge 使用与验收](bridge/README.md)。 P2 已增加 Hermes/OpenClaw 只读 Gateway 状态查询与任务心跳；不能将状态检查等同于模型级执行。
 
 ## 项目介绍
 

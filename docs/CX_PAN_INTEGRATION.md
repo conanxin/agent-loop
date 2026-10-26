@@ -83,3 +83,22 @@ git diff --check
 - 16 项核心 + Hub 自动化回归测试全部 PASS。没有修改既有 19 个历史 goal，没有重启 Hermes/OpenClaw，也没有把 Hub 原生端口暴露到公网。
 
 详见 [可选 Bridge 使用手册](../bridge/README.md)。最新状态：`CLOUD_HUB_ACTIVE / LOCAL_SSH_TUNNEL_ACTIVE / LOCAL_WORKER_ACTIVE / ECHO_E2E_PASS / CLAUDE_READONLY_E2E_PASS / QUEUED_RESTART_PASS`。限制：**不是**任意 ChatGPT/Claude 网页聊天之间互相远程唤醒；尚无独立 MCP/A2A 公网工具、未对接 Hermes/OpenClaw 任务执行、未实现 RUNNING 崩溃安全恢复。后续对这些能力单独验收。
+
+
+## 2026-10-26 P2｜Hermes / OpenClaw 状态适配与任务心跳
+
+**与 P1 的区别：** P1 验证了实际 Claude Code 只读分析任务的跨云/本地自动分派；P2 暂仅把 Hermes 与 OpenClaw 作为可查询的 `gateway.health` 目标，不冒充其大模型推理或命令执行已可自动委派。
+
+运行环境：Hermes v0.22.5+1.g93cbf3e、OpenClaw 2026.10.5；两个既有 Gateway `systemctl --user is-active` 均返回 active。本地 Worker 使用白名单，不通过 Gateway token，不读取其私有对话或调用 shell；新 target `hermes.health.local`、`openclaw.health.local` 能由 ChatGPT→腾讯云 Hub→本地 Worker→云端回执。
+
+**自动领单的实际回执（2026-10-26）：**
+- Hermes health task_id `77bf380d-d4c8-4eaf-8ed5-7e885e34c45f`，最终 COMPLETED，返回 `gateway_state: active`、真实版本及 `model_invoked: false`。
+- OpenClaw health task_id `eafac183-815f-45da-80f7-8d622ea87cf0`，最终 COMPLETED，返回 `gateway_state: active`、真实版本及 `model_invoked: false`。
+- 原有 ChatGPT→Claude Code 能正常执行，P2 新增 Worker 在任务处于 RUNNING 时每约 20 秒向 Hub 发送受 attempt_id/worker_id 约束的 heartbeat。
+- `GET /v1/tasks/{id}` 提供 `execution_health`：QUEUED 为 WAITING_FOR_WORKER；RUNNING 且最近 180 秒内有更新为 RUNNING_HEARTBEAT_OK；超过 180 秒未更新为 STALE_NEEDS_REVIEW；COMPLETED/FAILED 为 FINISHED。**不自动重做任何疑似中断的 RUNNING 任务**，以免重复式命令执行。Heartbeat 正常/伪造凭据失败/过期回报拒绝覆盖的隔离测试 PASS。
+
+**暂时阻塞：** Hermes 工具受限的单轮模型请求遇到不支持 run-budget、safe-mode 需要显式模型、再到 invalid_params；OpenClaw 独立只读 headless agent exec 在配置 Node 24 与最小工具面后仍以进程退出码 137 结束。尚未查明 137 是否源自 OOM 或其他资源因素，因此不能宣称是某个特定模型/软件根因。没有改动其现有 Gateway、模型或 Provider 配置。不要把这两次失败当作网络 transport 故障；P2 health 场景与模型执行是两个不同 Gate。
+
+**本轮额外负面回执：** P2 Claude 心跳验证 task_id `e79170d9-596b-4c6c-879c-ad1a7847f82f`，在 RUNNING 阶段至少两次实测得到 RUNNING_HEARTBEAT_OK；随后 Claude Code 返回进程 exit 1，任务最终 `FAILED`。旧 Worker 当时只记录退出码而没有抽取 JSON 中的错误 subtype，本轮已增加不泄露原始 stdout 的安全错误类别摘要；尚未用新版本复现 CLI 失败根因。故此任务只记心跳验收通过 / Claude 任务失败，不把它当作模型任务 PASS。
+
+**下一阶段：** P3A 独立排障 Hermes 参数/API 调用及 OpenClaw `agent exec` 的资源/安全隔离，先做短小、可控、只读一轮；P3B 在双边模型 Gate PASS 后才接实际判断/审核任务；P3C 做受限制的远程 MCP 工具，让 Claude Chat 和 ChatGPT 分别真正从自己的对话窗口提交和读回，不再通过外层人工 CLI；P3D 提供按真实事件产生的 Notion 增量日志。

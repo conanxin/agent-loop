@@ -71,3 +71,24 @@ P2：在受控能力清单中接入 Hermes 和 OpenClaw Adapter（先只读）�
 ## 离线排队的补充实测
 
 停掉本地专用 Worker 后提交 echo，保持 QUEUED；重启云端专用 Hub 后状态仍 QUEUED；重新启动 Worker 后自动转为 COMPLETED，正文正确。这仅证明**尚未领取的任务**能跨重启保存，不能据此宣称执行中任务可安全自动重试。
+
+
+## P2（2026-10-26）：只读 Gateway 状态适配器与执行心跳
+
+新增两个允许的目标：
+- `hermes.health.local` / capability `gateway.health`：调用 systemd 的只读 `is-active` 和 Hermes CLI `--version`。**不启动 Hermes 模型、不访问文件或调用 Hermes Gateway 工具**。
+- `openclaw.health.local` / capability `gateway.health`：调用同样的只读 service status 和 OpenClaw CLI `--version`，选择系统中已存在的 Node 24 可执行路径。**不进入 OpenClaw agent turn**。
+
+使用：
+
+```bash
+python3 bridge/client.py submit --target hermes.health.local --goal '只读查看 Hermes Gateway 状态'
+python3 bridge/client.py submit --target openclaw.health.local --goal '只读查看 OpenClaw Gateway 状态'
+```
+
+与 Claude/echo 共用本地 Worker，每约 20 秒领取任务。运行中的 Worker 也每约 20 秒发送一次 `POST /v1/workers/heartbeat`，Hub 检查 task_id + attempt_id + worker_id 是否一致。查询 `GET /v1/tasks/<id>` 返回 `execution_health`：`WAITING_FOR_WORKER`、`RUNNING_HEARTBEAT_OK`、`STALE_NEEDS_REVIEW`（连续 180 秒没有心跳）或 `FINISHED`。`STALE_NEEDS_REVIEW` **不意味着已经失败**，更不会自动再跑一次：避免超时导致重复执行或付费。
+
+本轮尝试模型级适配时，Hermes 的 `chat --safe-mode --toolsets none` 在配置/模型参数路径分别遇到不兼容参数、未提供模型、provider `invalid_params`；OpenClaw `agent exec` 使用独立只读 config/模型调用进程退出码为 137，未取得输出且未查明是否资源终止。为避免干扰用户本地正在进行的任务，**本阶段不将两者的推理/命令执行功能标记为已接入**。只做 Gateway 存活与版本查询。后续再次开启模型执行前，需先完成明确资源预算、权限与工具面隔离的单独实机验收。
+
+
+**P2 模型失败记录：** P2 task_id `e79170d9-596b-4c6c-879c-ad1a7847f82f` 运行期间 Hub 多次报告 RUNNING_HEARTBEAT_OK，但最终 Claude Code exit 1，Hub 正确记录 FAILED。当前已将后续 CLI 异常输出调整为只记录 subtype/退出码/字节数，不直接保存长段 stdout，不把此任务当作模型分析成功。

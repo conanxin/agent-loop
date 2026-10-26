@@ -38,8 +38,10 @@ def main():
     sub = parser.add_subparsers(dest="op", required=True)
 
     submit = sub.add_parser("submit", help="Create an echo or read-only Claude Code task")
-    submit.add_argument("--target", choices=("echo.local", "claude.code.local"),
-                        required=True)
+    submit.add_argument("--target", choices=(
+        "echo.local", "claude.code.local", "hermes.health.local",
+        "openclaw.health.local"
+    ), required=True)
     submit.add_argument("--goal", required=True)
     submit.add_argument("--idempotency-key",
                         help="Stable key; omit to generate a unique key")
@@ -60,7 +62,10 @@ def main():
             "requester": args.requester,
             "project_id": args.project_id,
             "target": target,
-            "capability": "repo.inspect" if target == "claude.code.local" else "echo",
+            "capability": (
+                "repo.inspect" if target == "claude.code.local"
+                else "gateway.health" if target.endswith(".health.local") else "echo"
+            ),
             "goal": args.goal,
             "repo_id": "agent-loop" if target == "claude.code.local" else "none",
         }

@@ -19,7 +19,13 @@ from urllib.parse import urlsplit
 HOME = Path.home()
 DB = Path(os.environ.get("CX_PAN_DB", str(HOME / ".local/share/cx-pan/tasks.sqlite3")))
 TOKEN = Path(os.environ.get("CX_PAN_TOKEN_FILE", str(HOME / ".config/cx-pan/token")))
-TARGETS = {"echo.local": "echo", "claude.code.local": "repo.inspect"}
+TARGETS = {
+    "echo.local": "echo",
+    "claude.code.local": "repo.inspect",
+    "hermes.health.local": "gateway.health",
+    "openclaw.health.local": "gateway.health",
+}
+STALE_AFTER_SECONDS = 180
 MAX_BODY = 65536
 
 
@@ -68,7 +74,20 @@ def public(row):
     keys = ("task_id", "requester", "project_id", "target", "capability",
             "goal", "repo_id", "status", "worker_id", "run_id",
             "created_at", "updated_at")
-    return {k: row[k] for k in keys}
+    result = {k: row[k] for k in keys}
+    if row["status"] == "RUNNING":
+        updated = datetime.fromisoformat(row["updated_at"])
+        age = max(0, (datetime.now(timezone.utc) - updated).total_seconds())
+        result["execution_health"] = (
+            "STALE_NEEDS_REVIEW" if age > STALE_AFTER_SECONDS else "RUNNING_HEARTBEAT_OK"
+        )
+        result["seconds_since_heartbeat"] = int(age)
+    else:
+        result["execution_health"] = (
+            "WAITING_FOR_WORKER" if row["status"] == "QUEUED"
+            else "FINISHED" if row["status"] in ("COMPLETED", "FAILED") else "UNKNOWN"
+        )
+    return result
 
 
 def valid_submit(body):
@@ -96,8 +115,8 @@ def valid_submit(body):
         raise ValueError("invalid requester/project_id/repo_id")
     if target == "claude.code.local" and repo_id != "agent-loop":
         raise ValueError("claude pilot only allows repo_id=agent-loop")
-    if target == "echo.local" and repo_id != "none":
-        raise ValueError("echo requires repo_id=none")
+    if target != "claude.code.local" and repo_id != "none":
+        raise ValueError("non-claude targets require repo_id=none")
     return {
         "idempotency_key": idem, "requester": requester, "project_id": project_id,
         "target": target, "capability": cap, "goal": goal, "repo_id": repo_id
@@ -164,6 +183,30 @@ def claim(db, payload):
     db.commit()
     return 200, {"task": {**public(row), "status": "RUNNING",
                          "attempt_id": attempt, "worker_id": who}}
+
+
+def heartbeat(db, payload):
+    required = {"task_id", "attempt_id", "worker_id"}
+    if not isinstance(payload, dict) or set(payload) != required:
+        raise ValueError("heartbeat requires task_id,attempt_id,worker_id")
+    if not all(isinstance(value, str) and 1 <= len(value) <= 100
+               for value in payload.values()):
+        raise ValueError("invalid heartbeat fields")
+    db.execute("BEGIN IMMEDIATE")
+    row = db.execute("SELECT * FROM tasks WHERE task_id=?",
+                     (payload["task_id"],)).fetchone()
+    if not row:
+        db.rollback()
+        return 404, {"error": "task not found"}
+    if (row["status"] != "RUNNING" or
+        row["attempt_id"] != payload["attempt_id"] or
+        row["worker_id"] != payload["worker_id"]):
+        db.rollback()
+        return 409, {"error": "heartbeat attempt mismatch or not running"}
+    db.execute("UPDATE tasks SET updated_at=? WHERE task_id=?",
+               (stamp(), payload["task_id"]))
+    db.commit()
+    return 200, {"ok": True, "task_id": payload["task_id"]}
 
 
 def report(db, payload):
@@ -244,6 +287,8 @@ class Handler(BaseHTTPRequestHandler):
                     code, obj = claim(db, body)
                 elif method == "POST" and path == "/v1/workers/report":
                     code, obj = report(db, body)
+                elif method == "POST" and path == "/v1/workers/heartbeat":
+                    code, obj = heartbeat(db, body)
                 elif method == "GET" and path.startswith("/v1/tasks/"):
                     parts = path.split("/")
                     if len(parts) not in (4, 5):

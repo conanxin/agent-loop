@@ -90,6 +90,60 @@ class HubTest(unittest.TestCase):
         bad["repo_id"] = "agent-loop"
         self.assertEqual(hub.enqueue(self.db, bad)[0], 201)
 
+    def test_heartbeat_marks_stale_running_without_replaying(self):
+        _, created = hub.enqueue(self.db, self.payload())
+        _, response = hub.claim(self.db, {
+            "worker_id": "wsl-worker", "targets": ["echo.local"]
+        })
+        task = response["task"]
+        self.db.execute(
+            "UPDATE tasks SET updated_at='2020-01-01T00:00:00+00:00' WHERE task_id=?",
+            (task["task_id"],)
+        )
+        self.db.commit()
+        row = self.db.execute(
+            "SELECT * FROM tasks WHERE task_id=?", (task["task_id"],)
+        ).fetchone()
+        self.assertEqual(hub.public(row)["execution_health"], "STALE_NEEDS_REVIEW")
+        heartbeat = {
+            "task_id": task["task_id"], "attempt_id": task["attempt_id"],
+            "worker_id": "wsl-worker"
+        }
+        self.assertEqual(
+            hub.heartbeat(self.db, dict(heartbeat, attempt_id="unknown"))[0], 409
+        )
+        self.assertEqual(hub.heartbeat(self.db, heartbeat)[0], 200)
+        row = self.db.execute(
+            "SELECT * FROM tasks WHERE task_id=?", (task["task_id"],)
+        ).fetchone()
+        self.assertEqual(hub.public(row)["execution_health"], "RUNNING_HEARTBEAT_OK")
+        self.assertEqual(row["status"], "RUNNING")
+        self.assertEqual(hub.report(self.db, {
+            **heartbeat, "status": "COMPLETED", "run_id": "echo-done",
+            "result_text": "done", "error_text": ""
+        })[0], 200)
+        self.assertEqual(hub.heartbeat(self.db, heartbeat)[0], 409)
+        count = self.db.execute(
+            "SELECT COUNT(*) FROM task_events WHERE task_id=?",
+            (task["task_id"],)
+        ).fetchone()[0]
+        self.assertEqual(count, 3)
+
+    def test_health_targets_are_explicit_read_only_capabilities(self):
+        for target in ("hermes.health.local", "openclaw.health.local"):
+            case = self.payload()
+            case["idempotency_key"] = "check-" + target
+            case["target"] = target
+            case["capability"] = "gateway.health"
+            result = hub.enqueue(self.db, case)
+            self.assertEqual(result[0], 201)
+            self.assertEqual(result[1]["task"]["capability"], "gateway.health")
+        bad = self.payload()
+        bad["target"] = "hermes.health.local"
+        bad["capability"] = "repo.inspect"
+        with self.assertRaises(ValueError):
+            hub.enqueue(self.db, bad)
+
     def test_http_auth_and_end_to_end(self):
         server = ThreadingHTTPServer(("127.0.0.1", 0), hub.Handler)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
