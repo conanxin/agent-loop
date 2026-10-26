@@ -76,6 +76,52 @@ class CloudWorkerTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "deny all tools"):
             cloud.review("This is a harmless source report")
 
+    def test_cloud_evidence_review_rechecks_same_primary_file_bytes(self):
+        import evidence
+        source = "Planner: OpenClaw." + chr(10) + "Executor: Hermes." + chr(10)
+        capsule = json.dumps({
+            "schema": evidence.SCHEMA, "repo_id": "agent-loop",
+            "path": "docs/SPEC.md",
+            "sha256": hashlib.sha256(source.encode()).hexdigest(),
+            "size_bytes": len(source.encode()), "line_count": 2,
+            "text": source,
+        }, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        digest = hashlib.sha256(capsule.encode()).hexdigest()
+        job = {
+            "task_id": "p6-cloud-task", "project_id": "CX-PAN",
+            "goal": "Do the Planner and Executor differ?",
+        }
+
+        def read_hub(method, path, data=None):
+            if path.endswith("p6-cloud-task"):
+                return {"provenance": {
+                    "parent_task_id": "verified-evidence",
+                    "source_sha256": digest
+                }}
+            return {"task": {"status": "COMPLETED",
+                              "target": "repo.evidence.local",
+                              "project_id": "CX-PAN"},
+                    "result_text": capsule}
+
+        with patch.object(cloud, "request_json", side_effect=read_hub), patch.object(
+            cloud, "review", return_value=("Cited [docs/SPEC.md:L1]", "openclaw:123")
+        ) as called:
+            raw, run_id = cloud.evidence_review(job)
+        self.assertEqual(run_id, "openclaw:123")
+        x = json.loads(raw)
+        self.assertEqual(x["source"]["sha256"], hashlib.sha256(source.encode()).hexdigest())
+        self.assertTrue(x["source_verified_before_model"])
+        self.assertIn("[docs/SPEC.md:L2]", called.call_args.args[0])
+
+        def broken_hub(method, path, data=None):
+            out = read_hub(method, path, data)
+            if "result_text" in out:
+                out["result_text"] = out["result_text"].replace("Hermes", "IMPOSTER")
+            return out
+        with patch.object(cloud, "request_json", side_effect=broken_hub):
+            with self.assertRaisesRegex(ValueError, "task result SHA"):
+                cloud.evidence_review(job)
+
     def test_reject_nonzero_without_raw_output(self):
         proc = CompletedProcess([], returncode=1,
                                 stdout="DO_NOT_LEAK_PRIVATE_RESULT",

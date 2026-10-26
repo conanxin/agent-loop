@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
+from evidence import SOURCES, verify as verify_evidence
 
 HOME = Path.home()
 DB = Path(os.environ.get("CX_PAN_DB", str(HOME / ".local/share/cx-pan/tasks.sqlite3")))
@@ -28,10 +29,15 @@ TARGETS = {
     "repo.validate.local": "repo.validate",
     "hermes.model.local": "text.review",
     "openclaw.model.cloud": "text.review",
+    "repo.evidence.local": "source.capture",
+    "hermes.evidence.local": "source.verify",
+    "openclaw.evidence.cloud": "source.verify",
 }
 PARENT_TARGETS = {
     "hermes.model.local": "claude.code.local",
     "openclaw.model.cloud": "hermes.model.local",
+    "hermes.evidence.local": "repo.evidence.local",
+    "openclaw.evidence.cloud": "repo.evidence.local",
 }
 
 STALE_AFTER_SECONDS = 180
@@ -128,17 +134,22 @@ def valid_submit(body):
     if not all(isinstance(s, str) and 1 <= len(s) <= 100
                for s in (requester, project_id, repo_id)):
         raise ValueError("invalid requester/project_id/repo_id")
-    if target in ("claude.code.local", "repo.validate.local") and repo_id != "agent-loop":
+    repo_targets = ("claude.code.local", "repo.validate.local", "repo.evidence.local")
+    if target in repo_targets and repo_id != "agent-loop":
         raise ValueError("repository capabilities only allow repo_id=agent-loop")
-    if target not in ("claude.code.local", "repo.validate.local") and repo_id != "none":
+    if target not in repo_targets and repo_id != "none":
         raise ValueError("non-repository targets require repo_id=none")
+    if target == "repo.evidence.local" and goal not in SOURCES:
+        raise ValueError("only approved source paths can be captured")
     parent_id = body.get("parent_task_id")
     sha = body.get("source_sha256")
     if (parent_id is None) != (sha is None):
         raise ValueError("provenance requires both parent_task_id and source_sha256")
+    if target in ("hermes.evidence.local", "openclaw.evidence.cloud") and not parent_id:
+        raise ValueError("P6 source reviewers require a provenance parent")
     if parent_id is not None:
         if target not in PARENT_TARGETS:
-            raise ValueError("P5 provenance requires registered text.review target")
+            raise ValueError("provenance requires a registered reviewed target")
         if not isinstance(parent_id, str) or not re.fullmatch(r"[0-9a-f-]{36}", parent_id):
             raise ValueError("invalid parent_task_id")
         if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{64}", sha):
@@ -181,9 +192,18 @@ def enqueue(db, payload):
             return 409, {"error": "parent must be a completed authorized upstream task in same project"}
         source = parent["result_text"]
         digest = hashlib.sha256(source.encode("utf-8")).hexdigest()
-        if digest != payload["source_sha256"] or source[:min(100, len(source))] not in payload["goal"]:
+        if digest != payload["source_sha256"]:
             db.rollback()
-            return 409, {"error": "parent content digest or quoted source mismatch"}
+            return 409, {"error": "parent content digest mismatch"}
+        if payload["target"] in ("hermes.evidence.local", "openclaw.evidence.cloud"):
+            try:
+                verify_evidence(source, payload["source_sha256"])
+            except ValueError:
+                db.rollback()
+                return 409, {"error": "invalid primary-source evidence capsule"}
+        elif source[:min(100, len(source))] not in payload["goal"]:
+            db.rollback()
+            return 409, {"error": "quoted parent source content mismatch"}
     task_id, at = str(uuid.uuid4()), stamp()
     db.execute("""INSERT INTO tasks(
         task_id, idempotency_key, fingerprint, requester, project_id, target,

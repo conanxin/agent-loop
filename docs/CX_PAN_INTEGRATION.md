@@ -1,6 +1,14 @@
 # agent-loop 原始目标复盘与 CX-PAN 接入边界（2026-10-26）
 
 
+## 当前权威状态（2026-10-26 P6 更新）
+
+- 已在 P5 三模型交接之外完成**同一原始文档的受限采集与 Hermes/OpenClaw 并行原文复核**；来源是公开 agent-loop `docs/SPEC.md`（5299 原始字节、176 行），本地封存 SHA-256 及云端 result SHA-256 均已实机验收。
+- 三个实际任务分别为采集 `b288f972-bc0e-411c-bc3d-883531415bbb`、本地 Hermes 复核 `77233bfb-9d11-4711-bc53-963736f399b7`、腾讯云 OpenClaw 复核 `1c3c1509-690b-4a24-be35-2e745de8c2e8`，均 COMPLETED；两个 Reviewer 的 parent_task_id/sha256 均指向同一份来源。重新发起同 ID 均 duplicate=true，无二次模型执行。
+- 引用范围自动检查：Hermes 13 处完整 `[docs/SPEC.md:Lx]` 行号引用、OpenClaw 1 处完整引用，均不越界。这个检查并非内容真伪或完整源代码验收，当前只允许白名单的 3 份公开文件。
+- Hermes 与云端 OpenClaw 是通过**带 SHA 的封存原文**读取同一份材料，不能说两者直接登录本地磁盘；是否按规范实现，需要查看源代码和实机任务而非只看 SPEC。
+- 独立 ChatGPT/Claude Chat Remote MCP、公网能力、跨私有 NAS 文件、Notion 全自动事件同步均未部署。此页 P0–P5 段落保留历史版本，以本节及最新 P6 验收为准。详细交付见 bridge/README.md。
+
 ## 当前权威状态（2026-10-26 P5 更新）
 
 - **首次真正完成 Claude Code（本地）→ Hermes（本地）→ OpenClaw（腾讯云）的三模型研究文本自动交接。** 任务 ID 分别为 `c520ab0b-778b-4eb3-8508-ec8909cba422` → `eff2d648-c73e-4aa8-a6a0-a441727eaf42` → `0563cd89-d86f-4c5b-9aba-d0c9e278aad4`，全部 COMPLETED。

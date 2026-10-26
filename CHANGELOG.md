@@ -2,6 +2,13 @@
 
 ## Unreleased (2026-10-26)
 
+### P6 allowlisted primary-source evidence and two-model review
+- Added exact UTF-8 source capsule with file byte count, line labels and SHA-256, limited to 3 public agent-loop documents; rejects traversal, symlinks, binary data and oversize files.
+- Added Hub-verified immutable source parent/result SHA256 for independent local Hermes and cloud OpenClaw evidence-review tasks.
+- Added source_review.py operator workflow with deterministic deduplication, source digest verification and explicit path/line citation range check.
+- Completed real P6 docs/SPEC.md 5299-byte experiment, independent two-model reviews and SQL evidence provenance checks. No private user file access or remote MCP exposure.
+
+
 ### P5 true three-model chain and private cloud reviewer
 - Enabled a real read-only cloud OpenClaw model turn using supported adaptive thinking and pinned deny-all-tools config.
 - Added a dedicated Tencent cloud worker that only claims openclaw.model.cloud text-review tasks.

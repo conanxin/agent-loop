@@ -41,7 +41,8 @@ def main():
     submit.add_argument("--target", choices=(
         "echo.local", "claude.code.local", "hermes.health.local",
         "openclaw.health.local", "repo.validate.local",
-        "hermes.model.local", "openclaw.model.cloud"
+        "hermes.model.local", "openclaw.model.cloud",
+        "repo.evidence.local"
     ), required=True)
     submit.add_argument("--goal", required=True)
     submit.add_argument("--idempotency-key",
@@ -67,11 +68,13 @@ def main():
                 "repo.inspect" if target == "claude.code.local"
                 else "repo.validate" if target == "repo.validate.local"
                 else "gateway.health" if target.endswith(".health.local")
+                else "source.capture" if target == "repo.evidence.local"
                 else "text.review" if target in ("hermes.model.local", "openclaw.model.cloud") else "echo"
             ),
             "goal": args.goal,
             "repo_id": (
-                "agent-loop" if target in ("claude.code.local", "repo.validate.local")
+                "agent-loop" if target in ("claude.code.local", "repo.validate.local",
+                                           "repo.evidence.local")
                 else "none"
             ),
         }

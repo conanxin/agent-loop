@@ -13,6 +13,7 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 MODULE = Path(__file__).resolve().parents[1] / "bridge/hub.py"
+sys.path.insert(0, str(MODULE.parent))
 spec = importlib.util.spec_from_file_location("cxpan_test_hub", MODULE)
 hub = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(hub)
@@ -286,6 +287,74 @@ class HubTest(unittest.TestCase):
         bad = dict(child, idempotency_key="p5-invalid-child-0002",
                    source_sha256="0"*64)
         self.assertEqual(hub.enqueue(self.db, bad)[0], 409)
+
+    def test_p6_capture_and_two_reviewers_with_same_file_sha(self):
+        from evidence import capture
+        from pathlib import Path
+        doc = Path(self.temp.name) / "test_repo" / "docs"
+        doc.mkdir(parents=True)
+        (doc / "SPEC.md").write_text("Planner: OpenClaw.\\nExecutor: Hermes.\\n")
+        capsule = capture(doc.parent, "docs/SPEC.md")
+        outer = hashlib.sha256(capsule.encode("utf-8")).hexdigest()
+        source = dict(self.payload())
+        source.update({
+            "idempotency_key": "p6-capture-0001",
+            "target": "repo.evidence.local",
+            "capability": "source.capture",
+            "goal": "docs/SPEC.md",
+            "repo_id": "agent-loop",
+        })
+        code, created = hub.enqueue(self.db, source)
+        self.assertEqual(code, 201)
+        source_id = created["task"]["task_id"]
+        claimed = hub.claim(self.db, {
+            "worker_id": "source-reader",
+            "targets": ["repo.evidence.local"],
+        })[1]["task"]
+        self.assertEqual(hub.report(self.db, {
+            "task_id": source_id, "attempt_id": claimed["attempt_id"],
+            "worker_id": "source-reader", "status": "COMPLETED",
+            "run_id": "source-cap", "result_text": capsule, "error_text": ""
+        })[0], 200)
+        for i, target in enumerate(("hermes.evidence.local", "openclaw.evidence.cloud"), 1):
+            child = dict(self.payload())
+            child.update({
+                "idempotency_key": f"p6-child-{i}-0001",
+                "target": target, "capability": "source.verify",
+                "goal": "Who are the Planner and Executor? Cite lines.",
+                "repo_id": "none",
+                "parent_task_id": source_id,
+                "source_sha256": outer,
+            })
+            code, result = hub.enqueue(self.db, child)
+            self.assertEqual(code, 201)
+            cid = result["task"]["task_id"]
+            link = self.db.execute(
+                "SELECT parent_task_id,source_sha256 FROM task_provenance "
+                "WHERE child_task_id=?", (cid,)
+            ).fetchone()
+            self.assertEqual((link[0], link[1]), (source_id, outer))
+            self.assertTrue(hub.enqueue(self.db, child)[1]["duplicate"])
+            if i == 2:
+                bad = dict(child, idempotency_key="p6-wrong-sha-0001",
+                           source_sha256="0"*64)
+                self.assertEqual(hub.enqueue(self.db, bad)[0], 409)
+                bad_parent = dict(child, idempotency_key="p6-bad-parent-0001",
+                                  parent_task_id="1"*36)
+                self.assertEqual(hub.enqueue(self.db, bad_parent)[0], 409)
+
+    def test_p6_blocks_arbitrary_source_paths_and_unparented_reviewers(self):
+        bad = dict(self.payload(), target="repo.evidence.local",
+                   capability="source.capture", repo_id="agent-loop",
+                   goal="../../confidential")
+        with self.assertRaisesRegex(ValueError, "approved source"):
+            hub.enqueue(self.db, bad)
+        for target in ("hermes.evidence.local", "openclaw.evidence.cloud"):
+            with self.subTest(target=target):
+                unparented = dict(self.payload(), target=target,
+                                  capability="source.verify", repo_id="none")
+                with self.assertRaisesRegex(ValueError, "provenance parent"):
+                    hub.enqueue(self.db, unparented)
 
     def test_http_auth_and_end_to_end(self):
         server = ThreadingHTTPServer(("127.0.0.1", 0), hub.Handler)

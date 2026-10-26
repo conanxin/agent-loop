@@ -27,6 +27,12 @@ agent-loop 最初只解决 OpenClaw 规划/审核 与 Hermes 执行/汇报 之�
 2026-10-26 已在可选的 `bridge/` 中新增并实测云端任务队列 + 本地 Claude Code 只读 Worker，原手工 relay 不变。详见 [bridge 使用与验收](bridge/README.md)。 P2 已增加 Hermes/OpenClaw 只读 Gateway 状态查询与任务心跳；不能将状态检查等同于模型级执行。
 
 
+## P6 原始文档双 Agent 核验（2026-10-26）
+
+已在既有 CX-PAN 桥接层实现受限制的主文档证据胶囊：仅对仓库白名单中公开的 `README.md`、`docs/SPEC.md`、`docs/SCHEMAS.md` 采集原始 UTF-8 文本与 SHA-256；本地 Hermes、腾讯云 OpenClaw 两个审核者可收到同一份经 Hub 核验的封存原文，并引用具体行号。
+
+已实机完成 `docs/SPEC.md` 双 Agent 核验、云端来源 SHA-256 比对、重复请求不重复模型执行。使用 `python3 bridge/source_review.py --workflow-id my-source-001 --source docs/SPEC.md --claim '请用行号说明协议中手动中继的依据。'^。不支持任意读取 NAS/私有档案，未开放公网 Remote MCP；详见 [P6 源文证据与限制](bridge/README.md)。
+
 ## P5 三模型真实协作（2026-10-26）
 
 已通过 ChatGPT/CXRE、Claude Code（本地）、Hermes（本地）、OpenClaw（腾讯云）的实际研究结果交接。指定已完成的 Claude task ID 后，`python3 bridge/review_chain.py --source-task-id <id>` 自动执行 Hermes 和云端 OpenClaw 两级受限文本复核，完整父任务 ID、原始正文 SHA-256、执行 ID 与终态由云端 SQLite 记录，重复执行复用结果。**这是转交研究文字，不等于三个模型共同读取了原始文件。** [完整 P5 验收与命令](bridge/README.md)。

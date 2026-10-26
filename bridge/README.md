@@ -221,3 +221,46 @@ python3 bridge/client.py result 0563cd89-d86f-4c5b-9aba-d0c9e278aad4
 - 三个模型处理的上游 P3 研究摘要含历史状态，当前权威运行状态以云端 Ledger + 本轮 Git/Notion P5 记录为准。
 
 [OpenClaw 官方 agent exec](https://docs.openclaw.ai/cli/agent)｜[OpenClaw 工具拒绝策略](https://docs.openclaw.ai/gateway/config-tools/tool-policy)｜[配置包含](https://docs.openclaw.ai/gateway/config-secrets-env)
+
+## P6｜两个 Agent 核查同一份封存原文（2026-10-26）
+
+P5 的 Claude→Hermes→OpenClaw 链条核对的是**前一模型的研究报告**。P6 增加独立的主文档证据通道：本地 Worker 受限采集同一份公开的源文件，将 UTF-8 全文、路径、原始字节大小、行数和 SHA-256 以 evidence capsule 形式存入腾讯云 Hub；Hermes 和 OpenClaw 分别从原文证据任务获取逐行标记的正文，以此形成可检查的意见。
+
+### 授权和安全边界
+
+- 目前唯一的采集目标是 `repo.evidence.local` / `source.capture`，只允许这个公开 agent-loop 仓库的 `README.md`、`docs/SPEC.md`、`docs/SCHEMAS.md`。不接受绝对文件路径、`../`、符号链接、二进制文件、超出 18 KB 的文档或任意 Windows/NAS 文件。
+- `bridge/evidence.py` 读入原文**字节**，计算 `SHA256(original_bytes)`；用规范 JSON 封存 `schema= cxpan.evidence/1`、`path`、`size_bytes`、`line_count` 与 UTF-8 原文。封存 JSON 本身又形成一个 `source_result_sha256`，用于云端 Task Ledger 的 parent/child 关联。
+- 两个独立复核目标 `hermes.evidence.local`、`openclaw.evidence.cloud` 必须有父 evidence task 与正确的 SHA-256。Hub 验证父任务已完成、项目、来源类型、结果 SHA-256、内部原文 SHA-256、字节/行数；没有来源或被篡改则禁止入队。
+- 本地 Hermes 的 `clarify` 和云端 OpenClaw pinned `deny all tools` 只收到**经过验证的原文摘录**与行号，而不是给它们开放终端/任意磁盘访问；不把源文件中的任何命令视为授权执行。
+- 引用核验器要求至少一处完整 `[docs/SPEC.md:Lx]` 形式、行号不能超出原文件；它只核验**引用格式和范围**，并不能自动证明引用文字与模型解释之间的语义关系，更不能证明规范与运行时实现一致。
+
+### 真实三任务验收（P6 evidence workflow）
+
+工作流 `cxpan-p6-spec-evidence-20261026`，选择 `docs/SPEC.md`，询问手动中继与 Telegram 两行通知：
+
+1. 本地采集 task `b288f972-bc0e-411c-bc3d-883531415bbb`：COMPLETED，原文 **5299 bytes、176 lines**，原始 SHA-256 `edb931dde0c56d88b73ded570fab18f2b81787ea9350948c9b3b118133893a72`，封存任务正文 SHA-256 `cd569af9f6ecf36514493178444aae0b99cdc24b7efdb37d4927d96845be41b2`。
+2. Hermes task `77233bfb-9d11-4711-bc53-963736f399b7`：COMPLETED，run `hermes-oneshot:6ad2460f-3baa-44df-bc9c-596345fe74f2`，3638 chars。识别出 13 个带完整文件路径的行号引用且全部在原文范围内。
+3. OpenClaw 云端 task `1c3c1509-690b-4a24-be35-2e745de8c2e8`：COMPLETED，原生 session `3ee723cc-860d-4abc-bb85-d4147d465e1a`，3678 chars。至少 1 个带完整路径的行号引用通过范围校验；报告还使用了简写 `[L11]` 等，不视为全部自动核实。
+4. 两个 reviewer 都区分了**规范文本确实声明手动中继及 Telegram 两行**与**仅凭 SPEC 无法证明当前实际运行时完全按规范执行**，没有把后者当已证实事实。
+5. 腾讯云 SQLite 独立 SQL 核验两个 child 指向同一 evidence task、两个封存结果 SHA256 一致，三个 task 分别仅有一条 QUEUED、一条 CLAIMED、一条 COMPLETED。使用相同 workflow ID 重播，三个 `duplicate=true`，未重复执行模型。
+6. 全套自动化回归测试、旧手工 relay smoke 与标准脚本校验详见本次 Git 提交和 Notion 阶段记录。
+
+实际使用：
+
+```bash
+cd ~/workspace/projects/agent-loop
+python3 bridge/source_review.py   --workflow-id cxpan-p6-spec-evidence-20261026   --source docs/SPEC.md   --claim '判断手动中继与 Telegram 两行通知是否有规范依据，引用准确的文件行号。'
+
+# 用服务端任务 ID 分别查看两份完整审查正文
+python3 bridge/client.py result 77233bfb-9d11-4711-bc53-963736f399b7
+python3 bridge/client.py result 1c3c1509-690b-4a24-be35-2e745de8c2e8
+```
+
+**使用提示：** 对相同 workflow_id，`--source`、`--claim` 必须保持与第一次完全一致，否则幂等 key 会报 409；如需新论点，应使用新的 workflow_id，而不是篡改旧回执。
+
+### 未完成部分
+
+- 当前只允许**公开仓库中的 3 份小型文档**，没有允许私人 NAS/书库/照片资料上传模型。需要独立用户许可、权限与保密策略后再扩展。
+- 云端 reviewer 是通过 authenticated Hub 取得**经过封存的原文内容**并在模型输入中看见逐行文本，**不是直接挂载和读取用户的源磁盘**，不应声称模型实际独立打开了本地文件。
+- Hermes、OpenClaw 的推理都可能使用 MiniMax 家族，属于两个独立 Agent 执行环境，不等于两个独立底层模型家族。
+- 真正的 ChatGPT/Claude Chat Remote MCP、公网 OAuth 入口、自动 Notion 增量同步、Dots/Funes/Muse Adapter 尚未部署。下一步先实现专用只读认证 MCP 操作和持久的文件来源审核许可。
