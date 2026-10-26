@@ -2,6 +2,13 @@
 
 ## Unreleased (2026-10-26)
 
+### P7 restricted MCP gateway and client-scoped credentials
+- Added two separately authenticated, stateless MCP Streamable HTTP endpoints (ChatGPT test client and Claude custom connector).
+- Added bearer hash comparison, Origin/Host protections, safe capability allowlists, historical task visibility filter, separate daily quotas and Caddy TLS reverse path on the existing web frontend.
+- Verified two real public HTTPS client echo roundtrips, whitelisted public source capture and cross-client safe-task result retrieval.
+- Explicit compatibility gap: Claude supports fixed header auth; ChatGPT native custom MCP requires OAuth-compatible setup, not yet implemented. Do not claim consumer-chat-UI connection complete.
+
+
 ### P6 allowlisted primary-source evidence and two-model review
 - Added exact UTF-8 source capsule with file byte count, line labels and SHA-256, limited to 3 public agent-loop documents; rejects traversal, symlinks, binary data and oversize files.
 - Added Hub-verified immutable source parent/result SHA256 for independent local Hermes and cloud OpenClaw evidence-review tasks.

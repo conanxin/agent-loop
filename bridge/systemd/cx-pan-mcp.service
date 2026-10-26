@@ -1,0 +1,19 @@
+[Unit]
+Description=CX-PAN P7 restricted ChatGPT/Claude MCP gateway (loopback)
+After=network-online.target cx-pan-hub.service
+Wants=cx-pan-hub.service
+
+[Service]
+Type=simple
+WorkingDirectory=%h/cx-pan-hub
+Environment=CX_PAN_MCP_HOST=127.0.0.1
+Environment=CX_PAN_MCP_PORT=18488
+ExecStart=/usr/bin/python3 %h/cx-pan-hub/mcp_gateway.py
+Restart=on-failure
+RestartSec=8
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+
+[Install]
+WantedBy=default.target

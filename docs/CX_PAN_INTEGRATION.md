@@ -1,6 +1,13 @@
 # agent-loop 原始目标复盘与 CX-PAN 接入边界（2026-10-26）
 
 
+## 当前权威状态（2026-10-26 P7 更新）
+
+- P7 已通过 Caddy 现有 TLS 站点部署两条独立、需要 Bearer 认证的标准 MCP Streamable HTTP 路径：`https://www.conanxin.com/cxpan/chatgpt/mcp`、`https://www.conanxin.com/cxpan/claude/mcp`。腾讯云后端 MCP 在回环 `127.0.0.1:18488`，核心 Hub 在 `127.0.0.1:18487`，没有开放额外公网端口；原网站首页及已有 Agent Gateway 状态正常。
+- 仅暴露 agents_list、task_get、task_result、task_submit_safe 四个工具；后者限定 echo/公开原文采集、每日配额；客户端独立 token 的哈希存云端、明文只存本地模式 0600 的配置目录。两种客户端模拟器经真实 HTTPS 均完成 Echo 任务，Claude 客户端模拟器读取 ChatGPT 模拟器的安全任务，源文采集 `docs/SPEC.md` 再次验收通过。
+- **客户端 UI 边界：** Claude Chat 的自定义 MCP 可由用户通过固定 Header 认证连接，但尚未在 Claude Chat 界面实际点击安装；ChatGPT 原生 Custom MCP 当前需要支持的 OAuth 2.1 认证流程，不能使用私有 API key 直接配置原生插件。ChatGPT 仍可使用已有 CXRE Personal；P8 优先处理 OAuth 或受支持 Secure MCP Tunnel。因此本次宣称的是“正式 HTTPS MCP 接口 + 模拟客户端实测”，不是两个消费版聊天客户端已正式连上。
+- 本页 P0–P6 为历史快照，以本节和最新 Notion P7 进展页面为当前状态；P7 详细内容详见 bridge/README.md。
+
 ## 当前权威状态（2026-10-26 P6 更新）
 
 - 已在 P5 三模型交接之外完成**同一原始文档的受限采集与 Hermes/OpenClaw 并行原文复核**；来源是公开 agent-loop `docs/SPEC.md`（5299 原始字节、176 行），本地封存 SHA-256 及云端 result SHA-256 均已实机验收。

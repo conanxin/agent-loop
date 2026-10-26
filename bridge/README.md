@@ -264,3 +264,51 @@ python3 bridge/client.py result 1c3c1509-690b-4a24-be35-2e745de8c2e8
 - 云端 reviewer 是通过 authenticated Hub 取得**经过封存的原文内容**并在模型输入中看见逐行文本，**不是直接挂载和读取用户的源磁盘**，不应声称模型实际独立打开了本地文件。
 - Hermes、OpenClaw 的推理都可能使用 MiniMax 家族，属于两个独立 Agent 执行环境，不等于两个独立底层模型家族。
 - 真正的 ChatGPT/Claude Chat Remote MCP、公网 OAuth 入口、自动 Notion 增量同步、Dots/Funes/Muse Adapter 尚未部署。下一步先实现专用只读认证 MCP 操作和持久的文件来源审核许可。
+
+
+## P7｜ChatGPT / Claude 专用 MCP 入口与独立权限（2026-10-26）
+
+**已部署并实机测试的是两条受限 Streamable HTTP MCP 服务链路。原生 ChatGPT / Claude 网页聊天用户账户是否成功安装连接器是另一个验收门槛，不能凭 API 客户端成功就称 UI 已配置完成。**
+
+### 实际接口（均通过现有网站 443 TLS）
+
+- 用于授权的 ChatGPT 测试客户端及将来 OAuth 升级：`https://www.conanxin.com/cxpan/chatgpt/mcp`
+- 用于 Claude 自定义连接器：`https://www.conanxin.com/cxpan/claude/mcp`
+
+腾讯云 Caddy 只转发路径 `/cxpan/*` 到 `127.0.0.1:18488` 的独立 `cx-pan-mcp.service`，不开放新公网端口。原 `cx-pan-hub.service` 继续在 `127.0.0.1:18487`，旧 Worker、Gateway 和网站首页均不受影响。Caddy 配置修改前单独备份，`caddy validate` PASS，重新加载后 HTTPS 状态为未经认证 MCP 401、公共健康 200、原网站首页 200。
+
+### 独立凭据、能力与旧账本隔离
+
+- 在 WSL2 `~/.config/cx-pan/connectors/chatgpt.bearer`、`claude.bearer` 存有**两枚不同的、权限受限的凭据**，文件模式为 0600。腾讯云的 `~/.config/cx-pan/mcp_clients.json` 仅保留二者的 SHA-256，不保留明文凭据。任何凭据、哈希或主 Hub Token 均未写入 Git/Notion 或日志。
+- 客户端进来先做 bearer 哈希的恒时比较，再验证独立 URL 的客户端身份及可接受 Origin；凭据不能跨客户端路径使用。
+- `bridge/mcp_gateway.py` 只暴露四种工具：`agents_list`、`task_get`、`task_result`、`task_submit_safe`；后一项只有 `echo.local`（无模型费用）或 `repo.evidence.local`（公开文件白名单采集）两个能力。
+- 公开文件仅允许 `README.md`、`docs/SPEC.md`、`docs/SCHEMAS.md`；不允许任意 shell、Hermes/OpenClaw/Claude 付费调用、NAS 或私有文件。每客户端每天最多 20 个**不同**新任务 ID，同 ID 重试不增加额度。
+- 仅 `mcp.chatgpt`、`mcp.claude` 自己创建的这类安全任务可被两个客户端共同查询。现有历史 P0–P6 任意任务/付费模型报告、私有资料默认不可经这两条 MCP 链路读取。真实上游 Hub 的主凭据只由云端 MCP 服务自己持有，不向 MCP 调用方透传。
+
+### 已验收（2026-10-26）
+
+- 7 项独立 MCP SDK/HTTP 安全与协议测试 PASS：initialize、工具列表、独立凭据交叉拒绝、Origin 403、无凭据 401、旧任务隔离、路径白名单与每日配额。
+- 使用 **ChatGPT 专属客户端测试凭据** 经真实公网 HTTPS MCP 初始化、发现四种工具、提交 Echo task `5971f4eb-ce07-491f-bf61-6742b38fc18b` → COMPLETED，返回 ECHO_OK。
+- 使用 **Claude 专属客户端测试凭据** 做同样测试，task `e4d1d439-3fe7-43f0-aea4-4b828d05f5eb` → COMPLETED，返回 ECHO_OK。
+- 使用 ChatGPT 凭据通过 MCP 创建 `repo.evidence.local` 任务 `46cb9e26-f59b-4e19-b9e2-ef74f1ebd996` → COMPLETED，读取公开 `docs/SPEC.md` 5299 字节、SHA256 `edb931dde0c56d88b73ded570fab18f2b81787ea9350948c9b3b118133893a72`。
+- 使用 Claude MCP 凭据跨客户端读取 ChatGPT 已完成 Echo 的相同结果，证明安全任务可跨应用查询。
+- Caddy HTTPS 终端与原有官网均正常；没有把公开任务接口放到无需认证的 URL 上。
+
+### 官方客户端认证差异，不能省略
+
+- **Claude Chat**：其官方自定义 Remote MCP 连接器支持固定 `Authorization: Bearer ...` 请求头；用户在 `Customize → Connectors → Add custom connector` 中输入上述 Claude URL 并配置自己本地 Claude 凭据即可尝试连接。但截至本阶段尚未从真实 Claude Chat UI 发起对新 MCP 的首次调用，状态 `CLAUDE_CHAT_UI_NOT_CONNECTED`。
+- **ChatGPT 原生 Custom MCP Plugin**：2026 年当前 OpenAI 官方认证文档指出 ChatGPT 采用 OAuth 2.1 / OAuth 或无认证流程，**不支持用户提供自定义 API key 作为任意认证头**。因此当前 `/chatgpt/mcp` 的独立 Bearer 凭据可供标准 MCP 客户端实测，但**不能宣称 ChatGPT 原生 Plugins 界面能够直接安装成功**。P8 需要对 ChatGPT 正规实现 OAuth 2.1 授权码 + PKCE、受保护资源元数据、适当的 client 注册和撤销流程；或使用官方 Secure MCP Tunnel 与支持的授权架构。当前 ChatGPT 仍可通过已连接的 CXRE Personal 与 P7 服务/Hub 协作。此阶段状态 `CHATGPT_NATIVE_MCP_OAUTH_NOT_READY`。
+- 任何把凭据显示在聊天输出、把凭据写入公开文件、绕过 OAuth 把 ChatGPT 的配置设为 `No authentication` 的变通都是禁止的；必须保持私有任务系统的认证边界。
+
+### 代码与本地检查
+
+`bridge/mcp_gateway.py` 使用当前安装的 MCP Python SDK FastMCP，分别挂载两个客户端 Streamable HTTP 服务，外部由独立纯 ASGI Bearer Gate 授权、限制 Origin 与 HTTP Host；内部用私有 Hub Token 转发安全任务。`bridge/mcp_probe.py` 是主动测试脚本，不展示 Bearer 凭据：
+
+```bash
+cd ~/workspace/projects/agent-loop
+python3 bridge/mcp_probe.py   --url https://www.conanxin.com/cxpan/claude/mcp   --client claude --read-local-token --submit-echo
+```
+
+不要在聊天或 Notion 中粘贴 `*.bearer` 内容。轮换方法与公网下线的操作应在后续运维手册里记录。
+
+[ChatGPT 原生 MCP 连接与工作区要求](https://help.openai.com/en/articles/12584461-connecting-custom-mcp-servers-in-chatgpt)｜[OpenAI 官方 OAuth 认证要求](https://developers.openai.com/plugins/build/auth)｜[Claude Remote MCP 官方连接指南](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp)。

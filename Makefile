@@ -33,6 +33,9 @@ validate:
 	@test -f bridge/review_chain.py
 	@test -f bridge/evidence.py
 	@test -f bridge/source_review.py
+	@test -f bridge/mcp_gateway.py
+	@test -f bridge/mcp_probe.py
+	@test -f bridge/systemd/cx-pan-mcp.service
 	@test -f bridge/systemd/cx-pan-cloud-openclaw-worker.service
 	@test -f docs/SAFETY_BOUNDARIES.md
 	@test -f docs/TROUBLESHOOTING.md

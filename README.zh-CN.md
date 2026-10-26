@@ -27,6 +27,10 @@ agent-loop 最初只解决 OpenClaw 规划/审核 与 Hermes 执行/汇报 之�
 2026-10-26 已在可选的 `bridge/` 中新增并实测云端任务队列 + 本地 Claude Code 只读 Worker，原手工 relay 不变。详见 [bridge 使用与验收](bridge/README.md)。 P2 已增加 Hermes/OpenClaw 只读 Gateway 状态查询与任务心跳；不能将状态检查等同于模型级执行。
 
 
+## P7 专用 MCP 接口（2026-10-26）
+
+`bridge/mcp_gateway.py` 已经通过腾讯云已有 HTTPS 站点提供两条独立、Bearer 保护的 MCP 测试入口，ChatGPT 专用测试凭据与 Claude 凭据分开，四个工具只允许安全任务查询与公开源文采集。真实 HTTPS 客户端双边各完成一次 Echo 往返；Claude MCP 客户端还能读取 ChatGPT MCP 客户端的安全任务。**真正 Claude Chat UI 需要用户连接；ChatGPT 原生 Plugins 还需 OAuth 2.1，不能以 API-key 测试成功冒充原生安装成功。** 详见 [P7 MCP 使用和权限说明](bridge/README.md)。
+
 ## P6 原始文档双 Agent 核验（2026-10-26）
 
 已在既有 CX-PAN 桥接层实现受限制的主文档证据胶囊：仅对仓库白名单中公开的 `README.md`、`docs/SPEC.md`、`docs/SCHEMAS.md` 采集原始 UTF-8 文本与 SHA-256；本地 Hermes、腾讯云 OpenClaw 两个审核者可收到同一份经 Hub 核验的封存原文，并引用具体行号。
