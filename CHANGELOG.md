@@ -2,6 +2,13 @@
 
 ## Unreleased (2026-10-26)
 
+### P3 resumable readiness workflow
+- Added allowlisted repository validation worker with fixed unit-test command.
+- Added operator-run sequential workflow with stable task ids, persisted receipts and optional Claude Code research first.
+- Tested real cloud/local 3-stage chain and replay without duplicate execution; model-level Hermes/OpenClaw turns remain blocked.
+- Proven 4-stage Claude research + fixed local validation + dual gateway health chain; verified idempotent workflow replay.
+- Fixed Claude CLI pilot error_max_budget_usd by making the per-task budget ceiling configurable (default $0.75).
+
 ### P2 incremental gateway health and stale-task visibility
 - Safe Claude Code failure classification without copying raw unsuccessful model output.
 - Added explicit read-only gateway health capabilities for Hermes and OpenClaw;

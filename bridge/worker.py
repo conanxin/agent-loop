@@ -20,13 +20,16 @@ WORKER_ID = os.getenv("CX_PAN_WORKER_ID", "wsl2-readonly-worker")
 REPO = Path.home() / "workspace/projects/agent-loop"
 CLAUDE_EXE = os.getenv("CX_PAN_CLAUDE_BIN", str(Path.home() / ".local/bin/claude"))
 CLAUDE_MODEL = os.getenv("CX_PAN_CLAUDE_MODEL", "haiku")
+# A $0.20 CLI cost estimate can terminate a short read-only model task.
+# Preserve an explicit per-run ceiling, configurable for personal use.
+CLAUDE_MAX_BUDGET_USD = os.getenv("CX_PAN_CLAUDE_MAX_BUDGET_USD", "0.75")
 HEALTH_TARGETS = {
     "hermes.health.local": ("hermes-gateway.service", "hermes"),
     "openclaw.health.local": ("openclaw-gateway.service", "openclaw"),
 }
 AVAILABLE_TARGETS = (
     "echo.local", "claude.code.local",
-    "hermes.health.local", "openclaw.health.local"
+    "hermes.health.local", "openclaw.health.local", "repo.validate.local"
 )
 
 
@@ -68,12 +71,38 @@ def heartbeat_until_stopped(stop, task):
             pass
 
 
+def validate_repo():
+    """Fixed, non-user-controlled verification command in one approved repo."""
+    if not REPO.joinpath(".git").is_dir():
+        raise RuntimeError("approved repository missing")
+    command = [sys.executable, "-m", "unittest", "discover", "-s", "tests", "-q"]
+    proc = subprocess.run(
+        command, cwd=REPO, capture_output=True, text=True,
+        timeout=55, stdin=subprocess.DEVNULL
+    )
+    output = (proc.stdout or "") + "\n" + (proc.stderr or "")
+    if proc.returncode != 0:
+        raise RuntimeError("repo validation failed, exit_code=" + str(proc.returncode))
+    # Only the test count / final status are needed in the handoff.
+    import re
+    m = re.search(r"Ran (\d+) tests? in", output)
+    if not m or "OK" not in output[-300:]:
+        raise RuntimeError("repo validation returned no canonical unittest receipt")
+    return json.dumps({
+        "repo_id": "agent-loop", "runner": "unittest discover",
+        "tests_run": int(m.group(1)), "status": "PASS",
+        "model_invoked": False
+    }), "verify:" + str(uuid.uuid4())
+
+
 def execute(task):
     target = task["target"]
     if target == "echo.local":
         return f"ECHO_OK: {task['goal']}", "echo:" + str(uuid.uuid4())
     if target in HEALTH_TARGETS and task["capability"] == "gateway.health" and task["repo_id"] == "none":
         return read_gateway_health(target)
+    if target == "repo.validate.local" and task["capability"] == "repo.validate" and task["repo_id"] == "agent-loop":
+        return validate_repo()
     if target != "claude.code.local" or task["repo_id"] != "agent-loop":
         raise ValueError("unsupported worker task")
     if not REPO.joinpath(".git").is_dir():
@@ -97,7 +126,7 @@ def execute(task):
         "--disallowedTools", "Bash,Edit,Write,NotebookEdit,WebFetch,WebSearch",
         "--model", CLAUDE_MODEL,
         "--max-turns", "4",
-        "--max-budget-usd", "0.20",
+        "--max-budget-usd", CLAUDE_MAX_BUDGET_USD,
     ]
     proc = subprocess.run(
         command, cwd=REPO, capture_output=True, text=True, timeout=150,

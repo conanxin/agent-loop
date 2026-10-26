@@ -24,6 +24,7 @@ TARGETS = {
     "claude.code.local": "repo.inspect",
     "hermes.health.local": "gateway.health",
     "openclaw.health.local": "gateway.health",
+    "repo.validate.local": "repo.validate",
 }
 STALE_AFTER_SECONDS = 180
 MAX_BODY = 65536
@@ -113,10 +114,10 @@ def valid_submit(body):
     if not all(isinstance(s, str) and 1 <= len(s) <= 100
                for s in (requester, project_id, repo_id)):
         raise ValueError("invalid requester/project_id/repo_id")
-    if target == "claude.code.local" and repo_id != "agent-loop":
-        raise ValueError("claude pilot only allows repo_id=agent-loop")
-    if target != "claude.code.local" and repo_id != "none":
-        raise ValueError("non-claude targets require repo_id=none")
+    if target in ("claude.code.local", "repo.validate.local") and repo_id != "agent-loop":
+        raise ValueError("repository capabilities only allow repo_id=agent-loop")
+    if target not in ("claude.code.local", "repo.validate.local") and repo_id != "none":
+        raise ValueError("non-repository targets require repo_id=none")
     return {
         "idempotency_key": idem, "requester": requester, "project_id": project_id,
         "target": target, "capability": cap, "goal": goal, "repo_id": repo_id

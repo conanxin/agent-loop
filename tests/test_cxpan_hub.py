@@ -144,6 +144,20 @@ class HubTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             hub.enqueue(self.db, bad)
 
+    def test_repository_validate_target_needs_exact_capability(self):
+        case = self.payload()
+        case.update({
+            "idempotency_key": "p3-repo-validation-001",
+            "target": "repo.validate.local",
+            "capability": "repo.validate",
+            "repo_id": "agent-loop"
+        })
+        self.assertEqual(hub.enqueue(self.db, case)[0], 201)
+        invalid = dict(case, idempotency_key="p3-bad-validation-001")
+        invalid["repo_id"] = "none"
+        with self.assertRaises(ValueError):
+            hub.enqueue(self.db, invalid)
+
     def test_http_auth_and_end_to_end(self):
         server = ThreadingHTTPServer(("127.0.0.1", 0), hub.Handler)
         thread = threading.Thread(target=server.serve_forever, daemon=True)

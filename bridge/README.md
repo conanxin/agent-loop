@@ -15,7 +15,7 @@
 - `worker.py` — 本地向云端主动领单，当前支持 `echo.local` 和 `claude.code.local`，后者仅可对 allowlist 仓库做只读检查。
 - `systemd/` — 云端 Hub、本地 SSH 通道、本地 Worker 三个独立 service 文件。
 
-跨主机通信为**已有 SSH alias 的加密端口转发**，不直接开放公网 TCP/MCP 端口。Hub 独立令牌位于 `~/.config/cx-pan/token`（不进 Git/Notion）。Worker 使用 Claude CLI：`--permission-mode dontAsk --allowedTools Read,Glob,Grep --disallowedTools Bash,Edit,Write,... --no-session-persistence`；绑定只读仓库目录，最多四轮、单请求预算上限 0.20 美元。不自动重启 Hermes/OpenClaw。
+跨主机通信为**已有 SSH alias 的加密端口转发**，不直接开放公网 TCP/MCP 端口。Hub 独立令牌位于 `~/.config/cx-pan/token`（不进 Git/Notion）。Worker 使用 Claude CLI：`--permission-mode dontAsk --allowedTools Read,Glob,Grep --disallowedTools Bash,Edit,Write,... --no-session-persistence`；绑定只读仓库目录，最多四轮、单请求预算上限默认 0.75 美元（可由 CX_PAN_CLAUDE_MAX_BUDGET_USD 调整）。不自动重启 Hermes/OpenClaw。
 
 ## 实际使用：提交 Claude 任务
 
@@ -92,3 +92,47 @@ python3 bridge/client.py submit --target openclaw.health.local --goal '只读查
 
 
 **P2 模型失败记录：** P2 task_id `e79170d9-596b-4c6c-879c-ad1a7847f82f` 运行期间 Hub 多次报告 RUNNING_HEARTBEAT_OK，但最终 Claude Code exit 1，Hub 正确记录 FAILED。当前已将后续 CLI 异常输出调整为只记录 subtype/退出码/字节数，不直接保存长段 stdout，不把此任务当作模型分析成功。
+
+
+## P3：三阶段就绪验收与可重放流程（2026-10-26）
+
+P3 不把 Hermes/OpenClaw Gateway 在线冒充模型级执行。为了在模型调用尚未打通时提供实际可用的流程，新增：
+
+- `bridge/workflow.py`：串行提交固定阶段，同一 workflow_id 对应稳定的 idempotency_key；每阶段必须 COMPLETED 才继续。结果保存在 `~/.local/state/cx-pan/workflows/<workflow_id>.json`，包含任务 ID、真实 run_id 和结果摘要。中断后重新启动同 ID 将复用旧任务，不盲目重复执行。
+- `repo.validate.local`：独立固定执行器只对已批准的 agent-loop 仓库运行 `python3 -m unittest discover -s tests -q`；该阶段不调用任何模型、不接受任意 shell 命令。
+- 后续检查 `hermes.health.local` 和 `openclaw.health.local`，依次获得真实 Gateway 状态；三阶段串联是“测试/健康检查”工作流，不是三个模型彼此审稿。
+- 可选 `--with-claude` 会首先调用已有 Claude Code 只读研究任务，成功后再开始三个验证阶段；Claude 失败则停止并保留 FAILED 回执，不自行重试/掩盖错误。
+
+真实执行：
+
+```bash
+cd ~/workspace/projects/agent-loop
+python3 bridge/workflow.py --workflow-id cxpan-p3-readiness-20261026
+python3 bridge/workflow.py --workflow-id cxpan-p3-readiness-20261026
+# 同 ID 的第二次调用只复用原 COMPLETED 结果。
+python3 bridge/workflow.py --workflow-id my-p3-claude-check --with-claude
+```
+
+实机就绪流程 `cxpan-p3-readiness-20261026` 三个任务全部 COMPLETED：
+- `8233dd3b-3cee-427d-8c4f-48e4510791ea`：固定仓库校验 26 tests PASS。
+- `2328968f-c6e5-42f9-b617-27a2c15fa989`：Hermes Gateway active。
+- `40edf608-6ec9-4c99-8812-af9f6ea5116d`：OpenClaw Gateway active。
+- 同一 workflow_id 再次执行时 3 项 duplicate=true；云端事件每个任务仅出现一次 QUEUED、CLAIMED、COMPLETED。
+
+P3 模型诊断：本地 Hermes 参数 `-t none` 被拒绝，提示 unknown/invalid toolset；省略 -t、使用 safe-mode + 明确 MiniMax 模型后进程 65 秒超时，未得到回答，日志出现 managed_worker_failed。本地 OpenClaw 使用原生 Gateway operator session 的单轮 tool-free prompt，也在限定时间内超时；Gateway 记录 worker task timed out。MiniMax api.minimaxi.com 的 DNS/TLS 可连接（HEAD 返回 404，不代表认证/推理成功）。模型调用阻塞不等于 CX-PAN transport 阻塞；未修改原生 Gateway、模型或路由配置。
+
+**尚未验收：** Hermes/OpenClaw 模型级工作单、不同 Agent 实际读取彼此结果做判断、通用 Remote MCP、Dots/Funes/Muse 接入。
+
+
+**P3 Claude 预算实验：** 使用原 0.20 美元上限的 Claude 阶段 task_id `3016310a-f9e4-4d8a-86e4-283f1942b58f` 真实返回 `FAILED`，错误类别为 `error_max_budget_usd`。原任务保持失败，不自动重试；新增 `CX_PAN_CLAUDE_MAX_BUDGET_USD`，默认 0.75 美元，以新 workflow ID 独立重验。该参数是上限，不是实际花费凭证。
+
+
+## P3 完整四阶段实测（2026-10-26）
+
+使用 `CX_PAN_CLAUDE_MAX_BUDGET_USD=0.75` 默认上限后，新 workflow `cxpan-p3-claude-retry-20261026` 四阶段均 COMPLETED：
+- Claude Code 真实只读分析任务 `c520ab0b-778b-4eb3-8508-ec8909cba422`、session/run_id `8030983d-0f6a-4db8-aebe-7d190af23878`，约 2551 个正文字符；
+- 固定仓库校验 `3aff96f0-9310-4d80-87b2-8861e4d527df`，PASS；
+- Hermes Gateway 状态 `225267ba-8a51-436a-8c32-b9259eb6e7a6`，active，不涉及模型；
+- OpenClaw Gateway 状态 `148c29dd-83ef-497c-a7f5-24259a631a64`，active，不涉及模型。
+
+重新用相同 workflow_id 跑完整流程，4 项均 duplicate=true，没有二次调用 Claude 或测试。最初使用 0.20 美元上限的 `cxpan-p3-claude-readiness-20261026` 保持 FAILED 历史不覆盖。Hermes/OpenClaw 真正模型级任务仍不可标为 PASS；详见集成总纲。

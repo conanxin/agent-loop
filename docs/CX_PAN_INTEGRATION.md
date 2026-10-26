@@ -1,5 +1,14 @@
 # agent-loop 原始目标复盘与 CX-PAN 接入边界（2026-10-26）
 
+## 当前权威状态（2026-10-26 P3 更新）
+
+- **已部署并实机 PASS**：腾讯云 Hub + 本地 SSH 通道与 Worker；ChatGPT→Claude Code 只读分析→仓库固定测试→Hermes Gateway 只读健康检查→OpenClaw Gateway 只读健康检查。4 阶段 workflow ID `cxpan-p3-claude-retry-20261026`，均 COMPLETED，并验证同 ID 重跑全部 duplicate=true、不产生新执行。
+- Claude 真实任务 `c520ab0b-778b-4eb3-8508-ec8909cba422`（run_id `8030983d-0f6a-4db8-aebe-7d190af23878`）成功。旧 `0.20` 美元任务上限曾导致 `error_max_budget_usd`，现改为可配置的默认 `0.75` 美元上限，不等于实际花费。
+- **尚未 PASS**：Hermes 和 OpenClaw 的模型级任务、它们对 Claude 结果作模型审核、普通聊天 UI ↔ UI 的无授权自动唤醒、Muse/Funes/Dots 专用接入。
+- Hermes P3 重新诊断发现 `-t none` 是无效工具集，修正后受限模型调用仍超时，日志 `managed_worker_failed`；OpenClaw Gateway 单轮请求超时，日志 `worker task timed out`。MiniMax endpoint DNS/TLS 可连接，不能据此证明模型响应正常。继续保留阻塞标签，未修改原有 Gateway/Provider 配置。
+- **本页以下 P0/P1/P2 状态是历史快照**；后续进度以本节和带任务 ID 的最新实测为准。
+
+
 ## 1. 历史事实：从 Git 首次提交核对
 
 - 源码根目录：~/workspace/projects/agent-loop
@@ -102,3 +111,7 @@ git diff --check
 **本轮额外负面回执：** P2 Claude 心跳验证 task_id `e79170d9-596b-4c6c-879c-ad1a7847f82f`，在 RUNNING 阶段至少两次实测得到 RUNNING_HEARTBEAT_OK；随后 Claude Code 返回进程 exit 1，任务最终 `FAILED`。旧 Worker 当时只记录退出码而没有抽取 JSON 中的错误 subtype，本轮已增加不泄露原始 stdout 的安全错误类别摘要；尚未用新版本复现 CLI 失败根因。故此任务只记心跳验收通过 / Claude 任务失败，不把它当作模型任务 PASS。
 
 **下一阶段：** P3A 独立排障 Hermes 参数/API 调用及 OpenClaw `agent exec` 的资源/安全隔离，先做短小、可控、只读一轮；P3B 在双边模型 Gate PASS 后才接实际判断/审核任务；P3C 做受限制的远程 MCP 工具，让 Claude Chat 和 ChatGPT 分别真正从自己的对话窗口提交和读回，不再通过外层人工 CLI；P3D 提供按真实事件产生的 Notion 增量日志。
+
+## P3 三阶段任务验收（2026-10-26）
+
+核心层保持文件中继与显式授权；可选 bridge/workflow.py 已实机完成“固定仓库验证 → Hermes Gateway 状态 → OpenClaw Gateway 状态”三阶段自动领单、结果回传与同 ID 幂等复用。详细证据及模型级阻塞见 bridge/README.md；健康查询不等于模型执行。

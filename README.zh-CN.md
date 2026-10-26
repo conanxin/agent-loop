@@ -26,6 +26,10 @@ agent-loop 最初只解决 OpenClaw 规划/审核 与 Hermes 执行/汇报 之�
 
 2026-10-26 已在可选的 `bridge/` 中新增并实测云端任务队列 + 本地 Claude Code 只读 Worker，原手工 relay 不变。详见 [bridge 使用与验收](bridge/README.md)。 P2 已增加 Hermes/OpenClaw 只读 Gateway 状态查询与任务心跳；不能将状态检查等同于模型级执行。
 
+## P3 就绪检查
+
+现可运行 `python3 bridge/workflow.py --workflow-id my-p3-check-001`，顺序执行固定仓库测试和两个 Gateway 的只读状态查询；结果保存在任务状态账本，同一 ID 再跑不会重复执行。可用 `--with-claude` 先加入 Claude 只读分析。这不是 Hermes/OpenClaw 模型级执行能力的验收。 另已通过 `--with-claude` 的真实 Claude 参与的四阶段工作流；详见 [bridge 实机回执](bridge/README.md)。
+
 ## 项目介绍
 
 agent-loop 是一个**基于文件系统**的双 Agent 协作协议：

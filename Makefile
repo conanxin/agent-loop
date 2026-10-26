@@ -27,6 +27,7 @@ validate:
 	@test -f bridge/hub.py
 	@test -f bridge/client.py
 	@test -f bridge/worker.py
+	@test -f bridge/workflow.py
 	@test -f docs/SAFETY_BOUNDARIES.md
 	@test -f docs/TROUBLESHOOTING.md
 	@echo "=== Checking for secrets ==="
