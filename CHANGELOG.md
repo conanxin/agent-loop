@@ -1,6 +1,15 @@
 # Changelog
 
-## v1.0.0 (2024-06-14)
+## Unreleased (2026-10-26)
+
+- Strict canonical field, goal ID, integer iteration, path and decision validation.
+- Correct iteration tracking, numeric command sorting, and SHA-256 change detection.
+- Isolated positive/negative regression tests and read-only JSON status export.
+- Install directly from the checkout without cloning into a nonempty task directory.
+- Preserve the manual relay contract; no new network server or auto-execution.
+
+
+## v1.0.0 (2026-06-14)
 
 ### Added
 - Initial OSS release

@@ -1,4 +1,4 @@
-.PHONY: validate smoke install install-skills
+.PHONY: validate smoke contract-test install install-skills
 
 validate:
 	@echo "=== Validating scripts ==="
@@ -22,6 +22,8 @@ validate:
 	@test -f docs/STATE_MACHINE.md
 	@test -f docs/MANUAL_RELAY_WORKFLOW.md
 	@test -f docs/SCHEMAS.md
+	@test -f docs/CX_PAN_INTEGRATION.md
+	@test -f bin/agent-loop-status-json
 	@test -f docs/SAFETY_BOUNDARIES.md
 	@test -f docs/TROUBLESHOOTING.md
 	@echo "=== Checking for secrets ==="
@@ -38,6 +40,9 @@ validate-skills:
 
 smoke:
 	./scripts/smoke-test.sh
+
+contract-test:
+	python3 -m unittest discover -s tests -v
 
 install:
 	./scripts/install.sh

@@ -267,6 +267,19 @@ if [ "$TOP_MODE_COUNT" -gt 1 ]; then
     exit 2
 fi
 
+if [ "$MARK_DISPATCHED" = "1" ] && { [ "$ONCE" != "1" ] || [ -n "$REPORT_PATH" ]; }; then
+    echo "Error: --mark-dispatched must be --once without --report-path" >&2
+    exit 2
+fi
+if [ "$MARK_JUDGING" = "1" ] && [ "$JUDGE_PROMPT" != "1" ]; then
+    echo "Error: --mark-judging requires --judge-prompt" >&2
+    exit 2
+fi
+if [ -n "$REPORT_PATH" ] && [ "$ONCE" != "1" ]; then
+    echo "Error: --report-path requires --once" >&2
+    exit 2
+fi
+
 if [ "$TOP_MODE_COUNT" -eq 0 ]; then
     echo "Error: must specify --once, --judge-prompt, or --decision-path" >&2
     echo "Run 'agent-loop-relay --help' for usage." >&2
@@ -276,6 +289,10 @@ fi
 if [ -z "$GOAL_ID" ]; then
     echo "Error: missing <goal_id>" >&2
     echo "Run 'agent-loop-relay --help' for usage." >&2
+    exit 2
+fi
+if ! [[ "$GOAL_ID" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+    echo "Error: goal_id must match [a-zA-Z0-9_-]+" >&2
     exit 2
 fi
 
@@ -308,6 +325,8 @@ import os
 import sys
 import glob
 import tempfile
+import hashlib
+import re
 from datetime import datetime, timezone
 
 goal_id      = os.environ["GOAL_ID"]
@@ -358,17 +377,103 @@ def expected_report_path(state):
         return f"{goal_dir}/hermes-reports/001.md"
     return f"{goal_dir}/hermes-reports/{int(iteration):03d}.md"
 
+# --- strict canonical protocol parser (v1-compatible fields) ---
+REQUIRED_FIELDS = {
+    "HERMES_COMMAND": (
+        "goal_id", "iteration", "command_type", "objective", "instructions",
+        "validation", "report_back", "stop_conditions"
+    ),
+    "HERMES_REPORT": (
+        "goal_id", "iteration", "status", "summary", "changed_files",
+        "commands_run", "validation_result", "commit", "report_path",
+        "issues", "recommendation"
+    ),
+    "OPENCLAW_DECISION": (
+        "goal_id", "iteration", "decision", "requires_human_approval",
+        "reason", "next_expected_result"
+    ),
+}
+
+def die(message):
+    print(f"Error: {message}", file=sys.stderr)
+    sys.exit(1)
+
+def parse_canonical(path, kind, expected_iteration=None):
+    """Validate the one canonical block, identity, and integer iteration.
+
+    Indented list values are accepted for backward-compatible multiline fields.
+    Existing historical files are not migrated or rewritten.
+    """
+    with open(path, "r", encoding="utf-8") as f:
+        lines = f.read().splitlines()
+    begin, end = f"BEGIN_{kind}", f"END_{kind}"
+    starts = [i for i, line in enumerate(lines) if line.strip() == begin]
+    ends = [i for i, line in enumerate(lines) if line.strip() == end]
+    if len(starts) != 1 or len(ends) != 1 or starts[0] >= ends[0]:
+        die(f"{path}: expected exactly one ordered {begin}/{end} block")
+    fields, last_key = {}, None
+    for line in lines[starts[0]+1:ends[0]]:
+        if not line.strip():
+            continue
+        match = re.fullmatch(r"([a-z][a-z_]*):[ \t]*(.*)", line)
+        if match:
+            key, value = match.groups()
+            if key in fields:
+                die(f"{path}: duplicate field {key}")
+            fields[key] = value.strip()
+            last_key = key
+        elif (line.startswith(" ") or line.startswith("\t")) and last_key:
+            fields[last_key] += "\n" + line.strip()
+        else:
+            die(f"{path}: non-canonical line inside {kind} block")
+    missing = [key for key in REQUIRED_FIELDS[kind] if not fields.get(key)]
+    if missing:
+        die(f"{path}: missing/empty {kind} fields: {', '.join(missing)}")
+    if fields["goal_id"] != goal_id:
+        die(f"{path}: {kind} goal_id {fields['goal_id']!r} != {goal_id!r}")
+    if not re.fullmatch(r"[1-9][0-9]*", fields["iteration"]):
+        die(f"{path}: {kind} iteration must be a positive integer; got {fields['iteration']!r}")
+    iteration = int(fields["iteration"])
+    if expected_iteration is not None and iteration != expected_iteration:
+        die(f"{path}: {kind} iteration {iteration} != current iteration {expected_iteration}")
+    if kind == "HERMES_COMMAND" and fields["command_type"] not in ("implement", "validate", "document"):
+        die(f"{path}: invalid command_type {fields['command_type']!r}")
+    if kind == "HERMES_REPORT":
+        if fields["status"] not in ("PASS", "PARTIAL", "FAIL", "BLOCKED"):
+            die(f"{path}: invalid report status {fields['status']!r}")
+        declared_path = fields["report_path"]
+        if not os.path.isabs(declared_path) or os.path.realpath(declared_path) != os.path.realpath(path):
+            die(f"{path}: report_path must be the actual absolute report path")
+    if kind == "OPENCLAW_DECISION":
+        valid = ("DONE", "NEXT_COMMAND", "REPAIR_COMMAND", "PARTIAL",
+                 "BLOCKED", "NEEDS_HUMAN_REVIEW")
+        if fields["decision"] not in valid:
+            die(f"{path}: invalid decision {fields['decision']!r}")
+        if fields["requires_human_approval"] not in ("true", "false"):
+            die(f"{path}: requires_human_approval must be true or false")
+    return fields, iteration
+
+def file_digest(path):
+    with open(path, "rb") as f:
+        return hashlib.sha256(f.read()).hexdigest()
+
 # --- load state ---
 with open(state_file, "r", encoding="utf-8") as f:
     state = json.load(f)
+if state.get("goal_id") != goal_id:
+    die("state.json goal_id mismatch")
 
 current_state = state.get("current_state", "?")
 human_approval_required = bool(state.get("human_approval_required", False))
 
-# --- helper: find latest command file (sorted by name) ---
+# --- helper: find latest numbered command (not lexicographic sort) ---
 def latest_command():
-    files = sorted(glob.glob(f"{goal_dir}/hermes-commands/*.md"))
-    return files[-1] if files else None
+    candidates = []
+    for path in glob.glob(f"{goal_dir}/hermes-commands/*.md"):
+        match = re.fullmatch(r"0*([1-9][0-9]*)"+r"\.md", os.path.basename(path))
+        if match:
+            candidates.append((int(match.group(1)), path))
+    return max(candidates, key=lambda x: x[0])[1] if candidates else None
 
 # =====================================================================
 # Mode: --decision-path (Phase 5C new)
@@ -379,62 +484,44 @@ if decision_mode:
         print(f"Error: Decision ingestion is only valid after judge prompt / report written. (current: {current_state})", file=sys.stderr)
         sys.exit(1)
 
+    last_report = state.get("last_report")
+    if (last_report and state.get("last_report_sha256") and
+        (not os.path.isfile(last_report) or
+         file_digest(last_report) != state["last_report_sha256"])):
+        die("report changed after ingestion; do not accept a decision on stale evidence")
+
     # 2. Validate decision file path
     if not decision_file:
         print("Error: --decision-path requires <absolute_decision_path>", file=sys.stderr)
         sys.exit(2)
 
+    if not os.path.isabs(decision_file):
+        die("decision path must be absolute")
     if not os.path.isfile(decision_file):
         print(f"Error: decision file not found: {decision_file}", file=sys.stderr)
         sys.exit(1)
 
-    # 3. Read and parse decision file
-    with open(decision_file, "r", encoding="utf-8") as f:
-        content = f.read()
-
-    # 4. Validate markers
-    if "BEGIN_OPENCLAW_DECISION" not in content:
-        print("Error: decision file missing BEGIN_OPENCLAW_DECISION marker", file=sys.stderr)
-        sys.exit(1)
-    if "END_OPENCLAW_DECISION" not in content:
-        print("Error: decision file missing END_OPENCLAW_DECISION marker", file=sys.stderr)
-        sys.exit(1)
-
-    # 5. Extract fields (key: value format, one per line)
-    fields = {}
-    for line in content.splitlines():
-        line = line.strip()
-        if line.startswith("BEGIN_") or line.startswith("END_"):
-            continue
-        if ":" in line:
-            key, val = line.split(":", 1)
-            fields[key.strip()] = val.strip()
-
-    # 6. Required fields (Phase 5C: next_expected_result is REQUIRED)
-    required_fields = ["goal_id", "iteration", "decision", "requires_human_approval", "reason", "next_expected_result"]
-    missing = [f for f in required_fields if f not in fields or not fields[f]]
-    if missing:
-        print(f"Error: decision file missing required fields: {', '.join(missing)}", file=sys.stderr)
-        sys.exit(1)
-
-    # 7. Validate goal_id match
-    dec_goal_id = fields.get("goal_id", "")
-    if dec_goal_id != goal_id:
-        print(f"Error: Decision goal_id mismatch: {dec_goal_id} != {goal_id}", file=sys.stderr)
-        sys.exit(1)
-
-    # 8. Validate decision value
-    valid_decisions = ["DONE", "NEXT_COMMAND", "REPAIR_COMMAND", "PARTIAL", "BLOCKED", "NEEDS_HUMAN_REVIEW"]
-    decision_value = fields.get("decision", "")
-    if decision_value not in valid_decisions:
-        print(f"Error: Invalid decision value: {decision_value}", file=sys.stderr)
-        print(f"Valid values: {', '.join(valid_decisions)}", file=sys.stderr)
-        sys.exit(1)
+    # Parse and validate the canonical decision, including identity and round.
+    # For an unmigrated legacy state (iteration=0), infer the active round from
+    # the accepted report when one exists.
+    expected = int(state.get("iteration") or 0)
+    if not expected and state.get("last_report") and os.path.isfile(state["last_report"]):
+        _, expected = parse_canonical(state["last_report"], "HERMES_REPORT")
+    fields, round_num = parse_canonical(
+        decision_file, "OPENCLAW_DECISION", expected or None
+    )
+    decision_value = fields["decision"]
+    if not expected:
+        state["iteration"] = round_num
 
     # 9. Update state
     old_state = current_state
     state["last_decision"] = decision_file
+    state["last_decision_sha256"] = file_digest(decision_file)
     state["updated_at"] = now_iso()
+    if decision_value in ("NEXT_COMMAND", "REPAIR_COMMAND"):
+        state["human_approval_required"] = fields["requires_human_approval"] == "true"
+        state["human_approved"] = None
 
     # Decision → state mapping
     if decision_value == "DONE":
@@ -501,6 +588,9 @@ if judge_mode:
         print("Please verify the report file was written correctly.")
         sys.exit(1)
 
+    if state.get("last_report_sha256") and file_digest(last_report) != state["last_report_sha256"]:
+        die("report changed since ingestion; re-ingest the report before judging")
+
     # Print the stable judge prompt (user override #2)
     print("=== Judge Prompt for OpenClaw ===")
     print("/skill hermes-agent-loop judge-path")
@@ -509,7 +599,7 @@ if judge_mode:
     print("")
     print("要求：")
     print("1. 使用绝对路径读取 canonical report。")
-    print("2. 严格检查 BEGIN_HERMES_REPORT 15 点格式。")
+    print("2. 严格检查 BEGIN_HERMES_REPORT 的 11 个必填字段及判断清单。")
     print("3. 根据 status 判断 DONE / PARTIAL / REPAIR_COMMAND / BLOCKED / NEEDS_HUMAN_REVIEW。")
     print("4. 如果判断完成，请输出 BEGIN_OPENCLAW_DECISION。")
     print("5. 不从 Telegram 文本解析报告正文。")
@@ -538,6 +628,18 @@ if mark_disp:
         print("Error: last_command not set; cannot mark dispatched", file=sys.stderr)
         print("Hint: run 'agent-loop-relay --once <goal_id>' first to print and record the command.", file=sys.stderr)
         sys.exit(1)
+    if not os.path.isfile(last_command):
+        die(f"command file missing: {last_command}")
+    if state.get("last_command_sha256") and file_digest(last_command) != state["last_command_sha256"]:
+        die("command changed since --once; review it again before dispatch")
+    _, current_round = parse_canonical(last_command, "HERMES_COMMAND")
+    expected = int(state.get("iteration") or 0)
+    if expected and current_round != expected:
+        die(f"command iteration {current_round} != current {expected}")
+    state["iteration"] = current_round
+    if human_approval_required:
+        # This flag is the original explicit user-confirmed dispatch action.
+        state["human_approved"] = True
     advance(state, "DISPATCHED_TO_HERMES")
     print("Dispatched (user confirmed). Waiting for Hermes to return:")
     print("HERMES_STATUS: REPORT_WRITTEN")
@@ -557,7 +659,12 @@ if report_path:
     if current_state not in ("DISPATCHED_TO_HERMES", "HERMES_RUNNING", "HERMES_REPORT_WRITTEN"):
         print(f"Error: --report-path only valid in DISPATCHED_TO_HERMES / HERMES_RUNNING / HERMES_REPORT_WRITTEN (current: {current_state})", file=sys.stderr)
         sys.exit(1)
+    expected = int(state.get("iteration") or 0)
+    _, report_round = parse_canonical(report_path, "HERMES_REPORT", expected or None)
+    if not expected:
+        state["iteration"] = report_round
     state["last_report"] = report_path
+    state["last_report_sha256"] = file_digest(report_path)
     if current_state != "HERMES_REPORT_WRITTEN":
         advance(state, "HERMES_REPORT_WRITTEN")
     else:
@@ -578,7 +685,14 @@ if current_state == "COMMAND_READY":
     if not cmd:
         print(f"Error: state is COMMAND_READY but no command file found in {goal_dir}/hermes-commands/", file=sys.stderr)
         sys.exit(1)
+    match = re.fullmatch(r"0*([1-9][0-9]*)\.md", os.path.basename(cmd))
+    if not match:
+        die(f"invalid command filename: {cmd} (expected positive-integer.md)")
+    command_round = int(match.group(1))
+    parse_canonical(cmd, "HERMES_COMMAND", command_round)
     state["last_command"] = cmd
+    state["last_command_sha256"] = file_digest(cmd)
+    state["iteration"] = command_round
     if human_approval_required:
         advance(state, "WAITING_HUMAN_APPROVAL", prev_state=current_state)
         print("")

@@ -173,4 +173,4 @@ agent-loop-relay --decision-path <goal-id> <decision-file>
 
 ## Version History
 
-- v1.0.0 (2024-06-14): Initial OSS release with manual relay mode
+- v1.0.0 (2026-06-14): Initial OSS release with manual relay mode

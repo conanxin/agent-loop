@@ -31,6 +31,19 @@ export PATH="$HOME/.agent-loop/bin:$PATH"
 
 For custom paths or step-by-step install, see [docs/INSTALL.md](docs/INSTALL.md).
 
+## Project scope and CX-PAN integration
+
+The original protocol is a manual OpenClaw Planner/Judge and Hermes Executor/Reporter
+file relay, not an Agent gateway or chat service. The core never starts a network
+listener or invokes an agent automatically. The 2026-10 hardening adds canonical
+checks, round tracking, negative regression tests, and a read-only JSON adapter.
+
+Run: `python3 bin/agent-loop-status-json --all` and `make contract-test`.
+
+Absolute paths in the snapshot are local-only, not remote download links.
+For the optional multi-Agent CX-PAN plan and legacy-goal compatibility notes,
+see [CX-PAN integration](docs/CX_PAN_INTEGRATION.md).
+
 ## Why agent-loop?
 
 When two AI agents (OpenClaw for planning/judging, Hermes for execution/reporting) collaborate, they need a reliable communication channel. Telegram is convenient but has critical limitations:

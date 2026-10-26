@@ -26,6 +26,10 @@ if [ "$#" -ne 1 ]; then
 fi
 
 GOAL_ID="$1"
+if ! [[ "$GOAL_ID" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+    echo "Error: goal_id must match [a-zA-Z0-9_-]+" >&2
+    exit 2
+fi
 GOAL_DIR="${AGENT_LOOP_HOME}/goals/${GOAL_ID}"
 
 if [ ! -d "$GOAL_DIR" ]; then
@@ -57,7 +61,7 @@ print(f"last_command:              {state.get('last_command') or '(none)'}")
 print(f"last_report:               {state.get('last_report') or '(none)'}")
 print(f"last_decision:             {state.get('last_decision') or '(none)'}")
 print(f"human_approval_required:   {state.get('human_approval_required', False)}")
-print(f"human_approved:            {state.get('human_approved') or '(none)'}")
+print(f"human_approved:            {state.get('human_approved') if state.get('human_approved') is not None else '(none)'}")
 print(f"created_at:                {state.get('created_at', '?')}")
 print(f"updated_at:                {state.get('updated_at', '?')}")
 

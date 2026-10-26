@@ -30,9 +30,9 @@ agent-loop-init-goal "$GOAL_ID" "Smoke test goal"
 
 # Step 2: Write dummy command
 mkdir -p "$GOAL_DIR/hermes-commands"
-cat > "$GOAL_DIR/hermes-commands/001.md" <<'CMDEOF'
+cat > "$GOAL_DIR/hermes-commands/001.md" <<CMDEOF
 BEGIN_HERMES_COMMAND
-goal_id: SMOKE_TEST
+goal_id: $GOAL_ID
 iteration: 1
 command_type: validate
 objective: Smoke test validation
@@ -78,9 +78,9 @@ echo "PASS: State is DISPATCHED_TO_HERMES"
 
 # Step 6: Write report
 mkdir -p "$GOAL_DIR/hermes-reports"
-cat > "$GOAL_DIR/hermes-reports/001.md" <<'REPEOF'
+cat > "$GOAL_DIR/hermes-reports/001.md" <<REPEOF
 BEGIN_HERMES_REPORT
-goal_id: SMOKE_TEST
+goal_id: $GOAL_ID
 iteration: 1
 status: PASS
 summary: Smoke test report
@@ -88,7 +88,7 @@ changed_files: none
 commands_run: - smoke test
 validation_result: pass
 commit: none
-report_path: /tmp/smoke-test-report.md
+report_path: $GOAL_DIR/hermes-reports/001.md
 issues: none
 recommendation: none
 END_HERMES_REPORT
@@ -147,6 +147,14 @@ if [ "$STATE" != "DONE" ]; then
     exit 1
 fi
 echo "PASS: State is DONE"
+
+# The original smoke fixture left iteration=0 even after executing 001.md.
+ITERATION=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['iteration'])" "$GOAL_DIR/state.json")
+if [ "$ITERATION" != "1" ]; then
+    echo "FAIL: Expected iteration=1, got $ITERATION"
+    exit 1
+fi
+echo "PASS: State iteration is 1"
 
 # Step 12: Show final state
 echo ""

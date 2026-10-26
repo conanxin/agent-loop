@@ -1,0 +1,97 @@
+#!/usr/bin/env python3
+"""Read-only JSON status snapshot for humans and external Agent adapters.
+
+This is not a network service and never causes a task to execute.
+Local absolute paths must not be interpreted as remotely fetchable artifacts.
+"""
+import argparse
+import json
+import os
+import re
+import sys
+from collections import Counter
+from datetime import datetime, timezone
+from pathlib import Path
+
+STATES = {
+    "INIT", "OPENCLAW_PLANNING", "COMMAND_READY",
+    "WAITING_HUMAN_APPROVAL", "DISPATCHED_TO_HERMES",
+    "HERMES_RUNNING", "HERMES_REPORT_WRITTEN", "OPENCLAW_JUDGING",
+    "DONE", "PARTIAL", "BLOCKED", "NEEDS_HUMAN_REVIEW",
+}
+TERMINAL = {"DONE", "PARTIAL", "BLOCKED", "NEEDS_HUMAN_REVIEW"}
+IDENTIFIER = re.compile(r"^[a-zA-Z0-9_-]+$")
+
+
+def summarize(state_path):
+    try:
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        return {"goal_id": state_path.parent.name, "error": str(exc)}
+    key = state_path.parent.name
+    current = state.get("current_state")
+    iteration = state.get("iteration", 0)
+    refs = {}
+    for field in ("last_command", "last_report", "last_decision"):
+        path = state.get(field)
+        refs[field] = {
+            "local_path": path,
+            "exists_on_this_host": Path(path).is_file() if isinstance(path, str) else False,
+        }
+    anomalies = []
+    if state.get("goal_id") != key:
+        anomalies.append("STATE_GOAL_ID_MISMATCH")
+    if current not in STATES:
+        anomalies.append("UNKNOWN_STATE")
+    if isinstance(iteration, bool) or not isinstance(iteration, int) or iteration < 0:
+        anomalies.append("NON_INTEGER_STATE_ITERATION")
+    if iteration == 0 and any(ref["local_path"] for ref in refs.values()):
+        anomalies.append("LEGACY_ITERATION_ZERO")
+    return {
+        "goal_id": key,
+        "current_state": current,
+        "terminal": current in TERMINAL,
+        "iteration": iteration,
+        "human_approval_required": state.get("human_approval_required", False),
+        "human_approved": state.get("human_approved"),
+        "updated_at": state.get("updated_at"),
+        "references": refs,
+        "anomalies": anomalies,
+    }
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Read-only agent-loop status JSON")
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--goal", help="Inspect one goal by ID")
+    group.add_argument("--all", action="store_true", help="Inspect every goal")
+    args = parser.parse_args()
+    home = os.environ.get("AGENT_LOOP_HOME", str(Path.home() / ".agent-loop"))
+    if home.startswith("~"):
+        home = os.path.expanduser(home)
+    roots = Path(home) / "goals"
+    if args.goal:
+        if not IDENTIFIER.fullmatch(args.goal):
+            parser.error("goal_id must match [a-zA-Z0-9_-]+")
+        paths = [roots / args.goal / "state.json"]
+        if not paths[0].is_file():
+            parser.error("goal state.json not found")
+    else:
+        paths = sorted(roots.glob("*/state.json")) if roots.is_dir() else []
+    goals = [summarize(path) for path in paths]
+    states = Counter(g.get("current_state", "ERROR") for g in goals)
+    result = {
+        "schema": "agent-loop.status/1",
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "transport": "local_filesystem_only",
+        "remote_artifacts_fetchable": False,
+        "total_goals": len(goals),
+        "state_counts": dict(sorted(states.items())),
+        "goals": goals,
+    }
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0 if all("error" not in g for g in goals) else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

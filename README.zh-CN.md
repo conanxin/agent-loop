@@ -16,6 +16,14 @@ OpenClaw ↔️ Hermes 双 Agent 文件中继循环协议。
 ./scripts/install-skills.sh
 ```
 
+## 与 CX-PAN 多 Agent 协作的关系（2026-10-26）
+
+agent-loop 最初只解决 OpenClaw 规划/审核 与 Hermes 执行/汇报 之间的可靠文件交接。它不是多 AI 任务编排平台，CLI 不会自动执行命令、启动常驻服务或直接调用外部 API。
+
+本轮源码增强了命令/报告/决策的身份与轮次校验、隔离的错误案例测试，以及可被其他 Agent 读取的只读 JSON 状态。调用 `python3 bin/agent-loop-status-json --all` 或 `make contract-test` 即可查看和验证。
+
+跨电脑文件路径默认不可远程读取；真正跨云端执行需由独立 CX-PAN Hub/Adapter 提供，不能把 JSON 状态当作网络互联已经完成。历史兼容边界详见 [CX-PAN 集成设计](docs/CX_PAN_INTEGRATION.md)。
+
 ## 项目介绍
 
 agent-loop 是一个**基于文件系统**的双 Agent 协作协议：
