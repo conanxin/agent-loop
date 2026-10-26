@@ -55,6 +55,36 @@ class WorkerTest(unittest.TestCase):
         self.assertEqual(command[1:], ["-m", "unittest", "discover", "-s", "tests", "-q"])
         self.assertTrue(run_id.startswith("verify:"))
 
+    def test_hermes_model_adapter_uses_verified_prompt_only_interface(self):
+        answer = CompletedProcess(
+            args=[], returncode=0,
+            stdout="HERMES_P4_OK\\n", stderr=""
+        )
+        with patch.object(worker.subprocess, "run", return_value=answer) as runner, patch(
+            "pathlib.Path.is_file", return_value=True
+        ):
+            text, run_id = worker.hermes_review("Review a harmless summary")
+        self.assertIn("HERMES_P4_OK", text)
+        self.assertTrue(run_id.startswith("hermes-oneshot:"))
+        command = runner.call_args.args[0]
+        self.assertEqual(command[1:4], ["-t", "clarify", "-z"])
+        self.assertNotIn("--yolo", command)
+        self.assertNotIn("Bash", command)
+        self.assertFalse(runner.call_args.kwargs.get("shell", False))
+
+    def test_hermes_model_adapter_reports_nonzero_without_exposing_text(self):
+        failure = CompletedProcess(
+            args=[], returncode=1, stdout="PRIVATE_BAD_OUTPUT",
+            stderr="PRIVATE_ERROR"
+        )
+        with patch.object(worker.subprocess, "run", return_value=failure), patch(
+            "pathlib.Path.is_file", return_value=True
+        ):
+            with self.assertRaisesRegex(RuntimeError, "exit=1") as captured:
+                worker.hermes_review("Review a harmless summary")
+        self.assertNotIn("PRIVATE_BAD_OUTPUT", str(captured.exception))
+        self.assertNotIn("PRIVATE_ERROR", str(captured.exception))
+
     def test_claude_error_parses_only_safe_subtype_not_raw_content(self):
         task = {
             "target": "claude.code.local", "repo_id": "agent-loop",

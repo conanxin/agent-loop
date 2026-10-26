@@ -158,6 +158,21 @@ class HubTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             hub.enqueue(self.db, invalid)
 
+    def test_hermes_model_is_text_review_without_repository_access(self):
+        good = self.payload()
+        good.update({
+            "idempotency_key": "p4-hermes-readonly-0001",
+            "target": "hermes.model.local",
+            "capability": "text.review", "repo_id": "none",
+        })
+        self.assertEqual(hub.enqueue(self.db, good)[0], 201)
+        forbidden = dict(good, idempotency_key="p4-hermes-invalid-0002", repo_id="agent-loop")
+        with self.assertRaises(ValueError):
+            hub.enqueue(self.db, forbidden)
+        mismatched = dict(good, idempotency_key="p4-hermes-invalid-0003", capability="repo.inspect")
+        with self.assertRaises(ValueError):
+            hub.enqueue(self.db, mismatched)
+
     def test_http_auth_and_end_to_end(self):
         server = ThreadingHTTPServer(("127.0.0.1", 0), hub.Handler)
         thread = threading.Thread(target=server.serve_forever, daemon=True)

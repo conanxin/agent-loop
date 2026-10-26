@@ -25,6 +25,7 @@ TARGETS = {
     "hermes.health.local": "gateway.health",
     "openclaw.health.local": "gateway.health",
     "repo.validate.local": "repo.validate",
+    "hermes.model.local": "text.review",
 }
 STALE_AFTER_SECONDS = 180
 MAX_BODY = 65536

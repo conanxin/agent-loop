@@ -136,3 +136,34 @@ P3 模型诊断：本地 Hermes 参数 `-t none` 被拒绝，提示 unknown/inva
 - OpenClaw Gateway 状态 `148c29dd-83ef-497c-a7f5-24259a631a64`，active，不涉及模型。
 
 重新用相同 workflow_id 跑完整流程，4 项均 duplicate=true，没有二次调用 Claude 或测试。最初使用 0.20 美元上限的 `cxpan-p3-claude-readiness-20261026` 保持 FAILED 历史不覆盖。Hermes/OpenClaw 真正模型级任务仍不可标为 PASS；详见集成总纲。
+
+## P4｜真正的 Claude → Hermes 双模型审查（2026-10-26）
+
+P4 不再停留在 health 检查：本地 Hermes Agent v0.22.5 的 `hermes chat -q` 单次会话容易因为旧版 Gateway `session.create` 返回 `invalid_params`；根据上游 issue #139035/#139160 的解决线索，独立验证了 `hermes -t clarify -z` 受限的一次性模型回应，输出 `HERMES_P4_OK`，进程 exit 0、没有文件/终端工具。此实测证明当前 Hermes 模型可用，不需要更改 Hermes 原生 Gateway 配置。
+
+独立模型适配器 `hermes.model.local` / capability `text.review` 通过 `bridge/worker.py` 使用 Hermes CLI 列表参数调用（无 shell），工具集只含 `clarify`。Hub 把文本写入数据库并返回 `COMPLETED`；它不能直接读取本地仓库、执行测试或修改 NAS 文件。`run_id=hermes-oneshot:<uuid>` 是 **CX-PAN Worker 生成的调用 ID**，不是 Hermes Provider 的原生 session/run ID。
+
+本轮两个 Hermes 模型任务：
+- 简短任务 `52620ba0-ce9d-4eb5-bb83-8eae57a05624` → COMPLETED，Hermes 根据材料审慎提示不要把输出标记当作真实验收；run_id `hermes-oneshot:831ffa14-c2f9-4076-ac6c-aafc257e0154`。
+- **Claude → Hermes 真正跨模型复核：** 从历史 Claude 真实研究任务 `c520ab0b-778b-4eb3-8508-ec8909cba422` 读取 `COMPLETED` 报告及 Claude session `8030983d-0f6a-4db8-aebe-7d190af23878`，自动创建 Hermes 复核 task `d00acdaa-4595-4655-86dc-0550a336e8a5`，最终 COMPLETED，Hermes 按收到的 Claude 材料标出可支持论点、不确定项和下一步核实建议，明确不假装自己访问过原始文件；Worker 调用 ID `hermes-oneshot:42413953-4670-48ee-9b1e-30f318fee317`。
+- 重复执行同一个 `source_task_id` 复核，返回原 task_id，`duplicate=true`。两次 Hermes 任务各自只有 1 个 QUEUED、1 个 CLAIMED、1 个 COMPLETED 事件。
+- 由于上游 Claude 任务属于 P3 历史快照，其部分结论在 P4 已过期；Hermes 的复核**只针对收到的引文**，本项目最终状态应以 CX-PAN Ledger、当前 Git 和最新 Notion P4 验收为准。
+
+操作：
+
+```bash
+cd ~/workspace/projects/agent-loop
+
+# 直接让 Hermes 通过 Hub 做纯文本独立复核
+python3 bridge/client.py submit --target hermes.model.local   --goal '请复核这段研究摘要中的证据与不确定项'
+
+# 将一个已经 COMPLETED 的 Claude Code 报告交给 Hermes 二次复核
+python3 bridge/handoff.py   --source-task-id c520ab0b-778b-4eb3-8508-ec8909cba422 --wait
+
+# 同一上游任务再次调用只取原任务，不触发第二次模型调用
+python3 bridge/handoff.py   --source-task-id c520ab0b-778b-4eb3-8508-ec8909cba422
+```
+
+P4 **还未完成 OpenClaw 模型审查**。本轮缩减工具面的 `openclaw agent exec` 仍返回 137 且无 JSON 结果；相关 user cgroup `memory.events` 的 oom_kill=0、`systemd-oomd` 未运行、可访问内核日志未见匹配 OOM，因此不能把 137 确诊为内存不足。进一步排查需单独测隔离运行时、worker 生命周期或 Provider，并限制资源影响，不应重启正在使用的 Gateway。
+
+模型排障参考：[Hermes CLI 旧版 issue #139035](https://github.com/NousResearch/hermes-agent/issues/139035)｜[Gateway 修复汇总 #139160](https://github.com/NousResearch/hermes-agent/issues/139160)｜[OpenClaw agent exec CLI](https://docs.openclaw.ai/cli/agent)。

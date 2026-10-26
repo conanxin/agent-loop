@@ -2,6 +2,14 @@
 
 ## Unreleased (2026-10-26)
 
+### P4 real Hermes model and Claude-to-Hermes review
+- Found Hermes 0.22.x chat -q session.create regression; confirmed verified -z one-shot model entry works with clarify toolset.
+- Added authenticated, strictly text-only Hermes review worker capability and a cross-agent handoff CLI using completed Claude task output.
+- Real cloud→local Hermes model task and Claude→Hermes independent review both COMPLETED; stable source ID deduplicates follow-up requests.
+- OpenClaw headless agent exec remains blocked with exit 137 and no conclusive local OOM evidence.
+
+
+
 ### P3 resumable readiness workflow
 - Added allowlisted repository validation worker with fixed unit-test command.
 - Added operator-run sequential workflow with stable task ids, persisted receipts and optional Claude Code research first.

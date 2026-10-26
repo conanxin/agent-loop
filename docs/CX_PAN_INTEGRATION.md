@@ -1,5 +1,12 @@
 # agent-loop 原始目标复盘与 CX-PAN 接入边界（2026-10-26）
 
+## 当前权威状态（2026-10-26 P4 更新）
+
+- **新突破：** Hermes v0.22.5 的受限模型响应通过 `hermes -t clarify -z` 真实返回 `HERMES_P4_OK`；CX-PAN 云端新增 `hermes.model.local` 并取得真实模型结果。已实际完成 **Claude Code P3 报告 → Hermes 独立文本复核** 的跨模型任务交接；复用同一上游 source_task_id 后，Hermes 不重复执行。
+- **P4 Claude→Hermes 回执：** Claude source_task_id `c520ab0b-778b-4eb3-8508-ec8909cba422` → Hermes task_id `d00acdaa-4595-4655-86dc-0550a336e8a5`（COMPLETED）。Hermes 回答区分引文可支持论断和不可独立核验内容；不能把它当作直接文件读取的审计证据。
+- **仍受阻：** OpenClaw 独立 headless 模型调用 exit 137；cgroup/oomd 无确定 OOM 证据。Hermes 模型执行属于工具集受限的纯文本评审，不等于 Hermes 有本地文件工具权限或能执行限定测试。
+- 下方 P0–P3 文字保留历史原样以便追溯，以此节作为最新状态；详细实现和限制见 `bridge/README.md`。
+
 ## 当前权威状态（2026-10-26 P3 更新）
 
 - **已部署并实机 PASS**：腾讯云 Hub + 本地 SSH 通道与 Worker；ChatGPT→Claude Code 只读分析→仓库固定测试→Hermes Gateway 只读健康检查→OpenClaw Gateway 只读健康检查。4 阶段 workflow ID `cxpan-p3-claude-retry-20261026`，均 COMPLETED，并验证同 ID 重跑全部 duplicate=true、不产生新执行。

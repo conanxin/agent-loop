@@ -40,7 +40,8 @@ def main():
     submit = sub.add_parser("submit", help="Create an echo or read-only Claude Code task")
     submit.add_argument("--target", choices=(
         "echo.local", "claude.code.local", "hermes.health.local",
-        "openclaw.health.local", "repo.validate.local"
+        "openclaw.health.local", "repo.validate.local",
+        "hermes.model.local"
     ), required=True)
     submit.add_argument("--goal", required=True)
     submit.add_argument("--idempotency-key",
@@ -65,7 +66,8 @@ def main():
             "capability": (
                 "repo.inspect" if target == "claude.code.local"
                 else "repo.validate" if target == "repo.validate.local"
-                else "gateway.health" if target.endswith(".health.local") else "echo"
+                else "gateway.health" if target.endswith(".health.local")
+                else "text.review" if target == "hermes.model.local" else "echo"
             ),
             "goal": args.goal,
             "repo_id": (
