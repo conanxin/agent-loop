@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Cloud queue contract and HTTP regression tests, all using temporary files."""
 import importlib.util
+import hashlib
 import json
 import sys
 import tempfile
@@ -172,6 +173,119 @@ class HubTest(unittest.TestCase):
         mismatched = dict(good, idempotency_key="p4-hermes-invalid-0003", capability="repo.inspect")
         with self.assertRaises(ValueError):
             hub.enqueue(self.db, mismatched)
+
+    def test_immutable_parent_task_provenance_and_digest(self):
+        parent_payload = dict(self.payload())
+        parent_payload.update({
+            "idempotency_key": "p5-parent-claude-0001",
+            "target": "claude.code.local", "capability": "repo.inspect",
+            "repo_id": "agent-loop",
+        })
+        _, created = hub.enqueue(self.db, parent_payload)
+        parent_id = created["task"]["task_id"]
+        _, claim_result = hub.claim(
+            self.db, {"worker_id": "claude", "targets": ["claude.code.local"]}
+        )
+        claimed = claim_result["task"]
+        source_text = "CLAUDE_SOURCE_CONTENT_" + "factual source " * 18
+        result = hub.report(self.db, {
+            "task_id": parent_id,
+            "attempt_id": claimed["attempt_id"],
+            "worker_id": "claude",
+            "status": "COMPLETED",
+            "run_id": "claude-native-0001",
+            "result_text": source_text,
+            "error_text": "",
+        })
+        self.assertEqual(result[0], 200)
+        digest = hashlib.sha256(source_text.encode("utf-8")).hexdigest()
+        child = dict(self.payload())
+        child.update({
+            "idempotency_key": "p5-reviewed-child-0001",
+            "target": "hermes.model.local",
+            "capability": "text.review",
+            "repo_id": "none",
+            "goal": "Independently review this quoted data: " + source_text,
+            "parent_task_id": parent_id,
+            "source_sha256": digest,
+        })
+        code, created_child = hub.enqueue(self.db, child)
+        self.assertEqual(code, 201)
+        child_id = created_child["task"]["task_id"]
+        link = self.db.execute(
+            "SELECT parent_task_id,source_sha256 FROM task_provenance WHERE child_task_id=?",
+            (child_id,)
+        ).fetchone()
+        self.assertEqual((link[0], link[1]), (parent_id, digest))
+        duplicate = hub.enqueue(self.db, child)
+        self.assertEqual(duplicate[0], 200)
+        self.assertTrue(duplicate[1]["duplicate"])
+        count = self.db.execute(
+            "SELECT COUNT(*) FROM task_provenance WHERE child_task_id=?", (child_id,)
+        ).fetchone()[0]
+        self.assertEqual(count, 1)
+
+        bad_sha = dict(child, idempotency_key="p5-bad-sha-0001",
+                       source_sha256="0"*64)
+        self.assertEqual(hub.enqueue(self.db, bad_sha)[0], 409)
+        bad_text = dict(child, idempotency_key="p5-bad-quote-0001",
+                        goal="Falsely claims this is the source text")
+        self.assertEqual(hub.enqueue(self.db, bad_text)[0], 409)
+        bad_project = dict(child, idempotency_key="p5-bad-project-0001",
+                           project_id="NOT-CX-PAN")
+        self.assertEqual(hub.enqueue(self.db, bad_project)[0], 409)
+        self.assertEqual(self.db.execute(
+            "SELECT COUNT(*) FROM tasks WHERE target='hermes.model.local'"
+        ).fetchone()[0], 1)
+
+    def test_provenance_pair_and_target_validation(self):
+        original = self.payload()
+        original["parent_task_id"] = "a"*36
+        with self.assertRaises(ValueError):
+            hub.enqueue(self.db, original)
+        original["source_sha256"] = "b"*64
+        with self.assertRaises(ValueError):
+            hub.enqueue(self.db, original)
+
+    def test_openclaw_cloud_provenance_requires_completed_hermes_parent(self):
+        parent = dict(self.payload())
+        parent.update({
+            "idempotency_key": "p5-hermes-parent-0001",
+            "target": "hermes.model.local", "capability": "text.review",
+            "repo_id": "none",
+        })
+        _, record = hub.enqueue(self.db, parent)
+        hermes_id = record["task"]["task_id"]
+        text = "Hermes independent assessment: " + "verify sources. " * 15
+        _, owned = hub.claim(self.db, {
+            "worker_id": "hermes", "targets": ["hermes.model.local"]
+        })
+        t = owned["task"]
+        self.assertEqual(hub.report(self.db, {
+            "task_id": t["task_id"], "attempt_id": t["attempt_id"],
+            "worker_id": "hermes", "status": "COMPLETED",
+            "run_id": "hermes-one-shot-example", "result_text": text,
+            "error_text": ""
+        })[0], 200)
+        child = dict(self.payload())
+        child.update({
+            "idempotency_key": "p5-openclaw-child-0001",
+            "target": "openclaw.model.cloud", "capability": "text.review",
+            "repo_id": "none", "goal": "Review excerpt: " + text,
+            "parent_task_id": hermes_id,
+            "source_sha256": hashlib.sha256(text.encode()).hexdigest()
+        })
+        status, res = hub.enqueue(self.db, child)
+        self.assertEqual(status, 201)
+        link = self.db.execute(
+            "SELECT parent_task_id,source_sha256 FROM task_provenance WHERE child_task_id=?",
+            (res["task"]["task_id"],)
+        ).fetchone()
+        self.assertEqual((link[0], link[1]),
+                         (hermes_id, child["source_sha256"]))
+        bad = dict(child, idempotency_key="p5-invalid-child-0002",
+                   source_sha256="0"*64)
+        self.assertEqual(hub.enqueue(self.db, bad)[0], 409)
 
     def test_http_auth_and_end_to_end(self):
         server = ThreadingHTTPServer(("127.0.0.1", 0), hub.Handler)

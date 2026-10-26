@@ -1,0 +1,14 @@
+[Unit]
+Description=CX-PAN cloud OpenClaw text-only review worker (pinned no-tools config)
+After=network-online.target cx-pan-hub.service
+Wants=cx-pan-hub.service
+
+[Service]
+Type=simple
+WorkingDirectory=%h/cx-pan-hub
+ExecStart=/usr/bin/python3 %h/cx-pan-hub/cloud_worker.py --interval 20
+Restart=on-failure
+RestartSec=8
+
+[Install]
+WantedBy=default.target

@@ -2,6 +2,15 @@
 
 ## Unreleased (2026-10-26)
 
+### P5 true three-model chain and private cloud reviewer
+- Enabled a real read-only cloud OpenClaw model turn using supported adaptive thinking and pinned deny-all-tools config.
+- Added a dedicated Tencent cloud worker that only claims openclaw.model.cloud text-review tasks.
+- Added immutable parent task and source SHA-256 validation via an additive task_provenance table, without modifying existing task records.
+- Added Claude→Hermes→OpenClaw review_chain.py with persisted receipts, staged stop-on-failure and stable idempotency.
+- Verified native OpenClaw session reply, full three-model completed chain, both source hashes and no duplicate model calls.
+- Local OpenClaw headless exit-137 remains a separate unverified issue; observed external timeout may explain some previous 137 results.
+
+
 ### P4 real Hermes model and Claude-to-Hermes review
 - Found Hermes 0.22.x chat -q session.create regression; confirmed verified -z one-shot model entry works with clarify toolset.
 - Added authenticated, strictly text-only Hermes review worker capability and a cross-agent handoff CLI using completed Claude task output.

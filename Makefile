@@ -29,6 +29,9 @@ validate:
 	@test -f bridge/worker.py
 	@test -f bridge/workflow.py
 	@test -f bridge/handoff.py
+	@test -f bridge/cloud_worker.py
+	@test -f bridge/review_chain.py
+	@test -f bridge/systemd/cx-pan-cloud-openclaw-worker.service
 	@test -f docs/SAFETY_BOUNDARIES.md
 	@test -f docs/TROUBLESHOOTING.md
 	@echo "=== Checking for secrets ==="

@@ -167,3 +167,57 @@ python3 bridge/handoff.py   --source-task-id c520ab0b-778b-4eb3-8508-ec8909cba42
 P4 **还未完成 OpenClaw 模型审查**。本轮缩减工具面的 `openclaw agent exec` 仍返回 137 且无 JSON 结果；相关 user cgroup `memory.events` 的 oom_kill=0、`systemd-oomd` 未运行、可访问内核日志未见匹配 OOM，因此不能把 137 确诊为内存不足。进一步排查需单独测隔离运行时、worker 生命周期或 Provider，并限制资源影响，不应重启正在使用的 Gateway。
 
 模型排障参考：[Hermes CLI 旧版 issue #139035](https://github.com/NousResearch/hermes-agent/issues/139035)｜[Gateway 修复汇总 #139160](https://github.com/NousResearch/hermes-agent/issues/139160)｜[OpenClaw agent exec CLI](https://docs.openclaw.ai/cli/agent)。
+
+
+## P5｜真正的三模型跨主机独立研究链（2026-10-26）
+
+P5 已在真实云端与本地系统完成 **ChatGPT/CXRE → Claude Code（本地）→ Hermes（本地）→ OpenClaw（腾讯云）→ CX-PAN 结果查询**。两个模型接力过程自动由 CX-PAN Ledger/Worker 完成，没有人工复制/粘贴。OpenClaw 云端版本为 2026.10.3，使用 MiniMax M3.1 Flash + adaptive 思考模式；本地之前的 137/timeout 不再作为 P5 模型入口。
+
+### 真实失败原因与成功入口
+
+- 本地独立 OpenClaw 的进程 137 并无 OOM 核验依据；延长诊断也未取得模型回复。无关进程实验显示 GNU timeout 带 kill-after 可能返回 137，故不能直接把 137 归于内存。
+- 云端第一次调用 `--thinking off` 失败，OpenClaw JSON 明确表示该 MiniMax 模型只允许 adaptive / ultra；修正为 `adaptive` 后，约 27 秒得到 `OPENCLAW_CLOUD_P5_OK`，`ok=true`、`status=ok`。
+- 随后独立创建 `~/.openclaw/cxpan-p5-readonly.json5`（只有引用原配置和工具白名单，不复制明文密钥），通过根包含继承云端现有 MiniMax provider，并覆盖 `tools.deny=["*"]`、`tools.allow=[]`，测试模型 `OPENCLAW_CXPAN_SAFE_OK` 约 23 秒返回，未看到工具调用。云端 Gateway 配置/模型默认设置保持不变。
+
+### 云端独立 Worker（非 Gateway 改造）
+
+- 腾讯云运行 `cx-pan-cloud-openclaw-worker.service`，只领取 `openclaw.model.cloud` / `text.review` 类型的任务，直接访问腾讯云回环 `127.0.0.1:18487` 的受认证 Hub API。
+- 受控 Python 程序 `bridge/cloud_worker.py` 调用固定 `openclaw agent exec --config ~/.openclaw/cxpan-p5-readonly.json5 --model minimax/MiniMax-M3.1-Flash --thinking adaptive --code-mode direct --json`；不使用 shell 拼接任务文本，不对外发送聊天信息。失败只记录有限退出码/错误类别，避免原始敏感输出。
+- Worker 返回真实的 OpenClaw `sessionId`，在 Ledger 中以 `openclaw:<sessionId>` 呈现；这与 Hermes 的 `hermes-oneshot:<uuid>`（由 CX-PAN Worker 生成）是不同性质的标识。
+- 原本的 WSL2 Worker 仍只执行本地 Claude、Hermes 和状态/固定测试任务，不会去争抢云端 OpenClaw 任务。
+
+### P5 结构化来源证明
+
+- 云端 SQLite 为 P5 新增独立的 `task_provenance` 表（保留旧 tasks/events 不做覆盖迁移），每条审核记录都具备不可变的父 task_id 和原文 SHA-256。
+- 当子任务带 parent_task_id 和 source_sha256 入队时，Hub 核验父任务已 COMPLETED、项目相同、能力链合法（Claude→Hermes 或 Hermes→OpenClaw）、完整原始结果 SHA-256 匹配，且子任务确实引用源文本的开头；不满足直接拒绝。
+- 相同 idempotency_key 不产生第二个工作单，错误正文/哈希和跨项目请求被拒绝。
+- P5 `bridge/review_chain.py` 对已完成的 Claude 任务进行两个模型复核阶段。任何一步 FAILED/超时都停止；不自动重试副作用或付费模型任务。收到的审查只基于上游转交文字，不代表模型直接阅读/验证了原件。
+
+### P5 真机成功回执
+
+本轮复用了真实 Claude 来源 `c520ab0b-778b-4eb3-8508-ec8909cba422`（Claude run `8030983d-0f6a-4db8-aebe-7d190af23878`，2551 字符），然后连续执行：
+
+1. Hermes P5 审查 `eff2d648-c73e-4aa8-a6a0-a441727eaf42`，`COMPLETED`、run `hermes-oneshot:601be788-2752-45ae-9c04-fa7bf80910d4`，生成 1672 字符分析。
+2. 腾讯云 OpenClaw 审查 `0563cd89-d86f-4c5b-9aba-d0c9e278aad4`，`COMPLETED`、真实 session `8ccc3663-55bc-4fa0-9ede-04c678b9bbd6`，生成 2670 字符分析。
+3. OpenClaw 明确把原始 Hermes 引文限定为待验证材料，区分了两条可在引文内部支持的判断、一条过时/未核实断言和后续文件/日志核查步骤。它没有假装已经读取文件。
+4. 两个子任务的 parent_task_id 和 sha256 经独立 SQL 重算全部相符；三条任务各自只有一次 QUEUED/CLAIMED/COMPLETED。
+5. 重新运行同一个 Claude 来源的 `bridge/review_chain.py`，Hermes/OpenClaw 均返回 `duplicate=true`，并重用同一个最终报告。
+
+使用命令：
+
+```bash
+cd ~/workspace/projects/agent-loop
+python3 bridge/review_chain.py   --source-task-id c520ab0b-778b-4eb3-8508-ec8909cba422   --stage-timeout 175
+
+python3 bridge/client.py result 0563cd89-d86f-4c5b-9aba-d0c9e278aad4
+```
+
+### 尚未实现和后续
+
+- OpenClaw 模型现在是**云端受限文本审查**，不是本地 OpenClaw 已恢复；本地独立执行 137/卡住仍单列问题。
+- 三模型链路共享的是**特定工作单结果**，不是任意 AI 私人聊天可被外部唤醒，也不是各 Agent 全部私人记忆互通。
+- Hermes 和云端 OpenClaw 都没有在这条复核任务中直接读取实际文件。要升级为真正多 Agent 独立证据验收，需新增明确授权的文件引用/只读检索 Adapter、SHA-256 跨主机工件服务和验证门。
+- ChatGPT/Claude Chat 使用远程专用 MCP、Notion 任务完成时自动增量归档、Dots/Funes/Muse 等仍未部署；每项需单独真实验收。
+- 三个模型处理的上游 P3 研究摘要含历史状态，当前权威运行状态以云端 Ledger + 本轮 Git/Notion P5 记录为准。
+
+[OpenClaw 官方 agent exec](https://docs.openclaw.ai/cli/agent)｜[OpenClaw 工具拒绝策略](https://docs.openclaw.ai/gateway/config-tools/tool-policy)｜[配置包含](https://docs.openclaw.ai/gateway/config-secrets-env)

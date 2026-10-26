@@ -9,6 +9,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import sqlite3
 import uuid
 from datetime import datetime, timezone
@@ -26,7 +27,13 @@ TARGETS = {
     "openclaw.health.local": "gateway.health",
     "repo.validate.local": "repo.validate",
     "hermes.model.local": "text.review",
+    "openclaw.model.cloud": "text.review",
 }
+PARENT_TARGETS = {
+    "hermes.model.local": "claude.code.local",
+    "openclaw.model.cloud": "hermes.model.local",
+}
+
 STALE_AFTER_SECONDS = 180
 MAX_BODY = 65536
 
@@ -68,6 +75,11 @@ def connect():
           at TEXT NOT NULL,
           note TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS task_provenance(
+          child_task_id TEXT PRIMARY KEY,
+          parent_task_id TEXT NOT NULL,
+          source_sha256 TEXT NOT NULL
+        );
     """)
     return db
 
@@ -96,7 +108,8 @@ def valid_submit(body):
     if not isinstance(body, dict):
         raise ValueError("expected JSON object")
     allowed = {"idempotency_key", "requester", "project_id", "target",
-               "capability", "goal", "repo_id"}
+               "capability", "goal", "repo_id", "parent_task_id",
+               "source_sha256"}
     if set(body) - allowed:
         raise ValueError("unknown input fields")
     target = body.get("target")
@@ -119,9 +132,22 @@ def valid_submit(body):
         raise ValueError("repository capabilities only allow repo_id=agent-loop")
     if target not in ("claude.code.local", "repo.validate.local") and repo_id != "none":
         raise ValueError("non-repository targets require repo_id=none")
+    parent_id = body.get("parent_task_id")
+    sha = body.get("source_sha256")
+    if (parent_id is None) != (sha is None):
+        raise ValueError("provenance requires both parent_task_id and source_sha256")
+    if parent_id is not None:
+        if target not in PARENT_TARGETS:
+            raise ValueError("P5 provenance requires registered text.review target")
+        if not isinstance(parent_id, str) or not re.fullmatch(r"[0-9a-f-]{36}", parent_id):
+            raise ValueError("invalid parent_task_id")
+        if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{64}", sha):
+            raise ValueError("invalid source_sha256")
     return {
         "idempotency_key": idem, "requester": requester, "project_id": project_id,
-        "target": target, "capability": cap, "goal": goal, "repo_id": repo_id
+        "target": target, "capability": cap, "goal": goal, "repo_id": repo_id,
+        **({"parent_task_id": parent_id, "source_sha256": sha}
+           if parent_id is not None else {})
     }
 
 
@@ -141,6 +167,23 @@ def enqueue(db, payload):
             return 409, {"error": "idempotency key conflict"}
         db.commit()
         return 200, {"task": public(existing), "duplicate": True}
+    if "parent_task_id" in payload:
+        parent = db.execute(
+            "SELECT task_id, project_id, target, status, result_text FROM tasks WHERE task_id=?",
+            (payload["parent_task_id"],)
+        ).fetchone()
+        if not parent or parent["status"] != "COMPLETED" or (
+            parent["project_id"] != payload["project_id"] or
+            parent["target"] != PARENT_TARGETS[payload["target"]] or
+            not parent["result_text"]
+        ):
+            db.rollback()
+            return 409, {"error": "parent must be a completed authorized upstream task in same project"}
+        source = parent["result_text"]
+        digest = hashlib.sha256(source.encode("utf-8")).hexdigest()
+        if digest != payload["source_sha256"] or source[:min(100, len(source))] not in payload["goal"]:
+            db.rollback()
+            return 409, {"error": "parent content digest or quoted source mismatch"}
     task_id, at = str(uuid.uuid4()), stamp()
     db.execute("""INSERT INTO tasks(
         task_id, idempotency_key, fingerprint, requester, project_id, target,
@@ -149,6 +192,12 @@ def enqueue(db, payload):
         (task_id, payload["idempotency_key"], fingerprint, payload["requester"],
          payload["project_id"], payload["target"], payload["capability"],
          payload["goal"], payload["repo_id"], "QUEUED", at, at))
+    if "parent_task_id" in payload:
+        db.execute(
+            "INSERT INTO task_provenance(child_task_id,parent_task_id,source_sha256) "
+            "VALUES(?,?,?)",
+            (task_id, payload["parent_task_id"], payload["source_sha256"])
+        )
     db.execute("INSERT INTO task_events(task_id,kind,at,note) VALUES(?,?,?,?)",
                (task_id, "QUEUED", at, payload["target"]))
     db.commit()
@@ -301,14 +350,22 @@ class Handler(BaseHTTPRequestHandler):
                     ).fetchone()
                     if row is None:
                         return self.send_json(404, {"error": "not found"})
+                    link = db.execute(
+                        "SELECT parent_task_id, source_sha256 FROM task_provenance "
+                        "WHERE child_task_id=?", (task_id,)
+                    ).fetchone()
+                    provenance = dict(link) if link else None
                     if len(parts) == 5 and parts[4] == "result":
                         code, obj = 200, {
                             "task": public(row),
                             "result_text": row["result_text"],
-                            "error_text": row["error_text"]
+                            "error_text": row["error_text"],
+                            "provenance": provenance,
                         }
                     elif len(parts) == 4:
-                        code, obj = 200, {"task": public(row)}
+                        code, obj = 200, {
+                            "task": public(row), "provenance": provenance
+                        }
                     else:
                         code, obj = 404, {"error": "not found"}
                 elif method == "GET" and path == "/v1/agents":

@@ -1,5 +1,14 @@
 # agent-loop 原始目标复盘与 CX-PAN 接入边界（2026-10-26）
 
+
+## 当前权威状态（2026-10-26 P5 更新）
+
+- **首次真正完成 Claude Code（本地）→ Hermes（本地）→ OpenClaw（腾讯云）的三模型研究文本自动交接。** 任务 ID 分别为 `c520ab0b-778b-4eb3-8508-ec8909cba422` → `eff2d648-c73e-4aa8-a6a0-a441727eaf42` → `0563cd89-d86f-4c5b-9aba-d0c9e278aad4`，全部 COMPLETED。
+- **来源链验证：** Hub 新增独立 task_provenance(parent_task_id,source_sha256) 表；两级上游来源及原始文本 SHA-256 由 Hub 入队核验，事后直接读云端 SQLite 独立重算一致。重复执行同来源两阶段全部 duplicate=true，没有重做模型调用。
+- **OpenClaw 云端突破：** 云端 OpenClaw 2026.10.3 MiniMax M3.1 Flash 使用 adaptive 思考模式得到真实回复；Cloud Worker 使用 pinned no-tools config（继承现有 MiniMax provider，但 deny all tools），模型返回 OpenClaw 原生 session ID。原有 OpenClaw Gateway 配置未改变。
+- **保留边界：** 本地 OpenClaw headless 仍无成功模型回执；新的 OpenClaw 是云端受限文本 reviewer。三模型并未直接读取或核验所有源文件；它们审阅的是任务结果的引文，部分 P3 时间点材料已过时。完整回执详见 bridge/README.md。
+- 下文旧 P0–P4 记录均为历史快照；以本节和最新 P5 Notion 阶段页作为权威状态。
+
 ## 当前权威状态（2026-10-26 P4 更新）
 
 - **新突破：** Hermes v0.22.5 的受限模型响应通过 `hermes -t clarify -z` 真实返回 `HERMES_P4_OK`；CX-PAN 云端新增 `hermes.model.local` 并取得真实模型结果。已实际完成 **Claude Code P3 报告 → Hermes 独立文本复核** 的跨模型任务交接；复用同一上游 source_task_id 后，Hermes 不重复执行。

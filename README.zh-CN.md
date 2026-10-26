@@ -26,6 +26,11 @@ agent-loop 最初只解决 OpenClaw 规划/审核 与 Hermes 执行/汇报 之�
 
 2026-10-26 已在可选的 `bridge/` 中新增并实测云端任务队列 + 本地 Claude Code 只读 Worker，原手工 relay 不变。详见 [bridge 使用与验收](bridge/README.md)。 P2 已增加 Hermes/OpenClaw 只读 Gateway 状态查询与任务心跳；不能将状态检查等同于模型级执行。
 
+
+## P5 三模型真实协作（2026-10-26）
+
+已通过 ChatGPT/CXRE、Claude Code（本地）、Hermes（本地）、OpenClaw（腾讯云）的实际研究结果交接。指定已完成的 Claude task ID 后，`python3 bridge/review_chain.py --source-task-id <id>` 自动执行 Hermes 和云端 OpenClaw 两级受限文本复核，完整父任务 ID、原始正文 SHA-256、执行 ID 与终态由云端 SQLite 记录，重复执行复用结果。**这是转交研究文字，不等于三个模型共同读取了原始文件。** [完整 P5 验收与命令](bridge/README.md)。
+
 ## P4 双模型协作（2026-10-26）
 
 已实测 ChatGPT 经 CX-PAN Hub 交给本地 Hermes 的纯文本模型任务；已将一个真实 Claude Code 报告自动交给 Hermes 独立复核并返回结果。使用 `python3 bridge/handoff.py --source-task-id <claude_task_id> --wait`。重复同一来源不会创建第二次模型调用。Hermes 工具集只开放 clarify，不执行本地命令。OpenClaw 模型任务仍未通过，不能把 Gateway 在线等同模型能力已接入。详细证据见 [Bridge P4](bridge/README.md)。

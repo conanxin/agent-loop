@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """P4 cross-agent handoff contract; isolated and network-free."""
 import importlib.util
+import hashlib
 import sys
 import unittest
 from pathlib import Path
@@ -40,7 +41,11 @@ class HandoffTest(unittest.TestCase):
         self.assertEqual([x[0] for x in calls], ["GET", "POST"])
         self.assertEqual(calls[0][1], f"/v1/tasks/{SOURCE}/result")
         request = calls[1][2]
-        self.assertEqual(request["idempotency_key"], f"p4-claude-hermes-{SOURCE}")
+        self.assertEqual(request["idempotency_key"], f"p5-claude-hermes-provenance-{SOURCE}")
+        self.assertEqual(request["parent_task_id"], SOURCE)
+        expected = "Claude claimed:\n" + "X" * 6000
+        self.assertEqual(request["source_sha256"],
+                         hashlib.sha256(expected.encode("utf-8")).hexdigest())
         self.assertEqual(request["target"], "hermes.model.local")
         self.assertEqual(request["capability"], "text.review")
         self.assertEqual(request["repo_id"], "none")
