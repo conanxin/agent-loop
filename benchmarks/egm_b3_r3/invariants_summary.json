@@ -1,0 +1,25 @@
+{
+  "schema": "cxpan.egm_b3r3_invariants/1",
+  "evidence_capsule": {
+    "input_is_valid_under_current_source_checks": true,
+    "original_bytes": 10000,
+    "json_capsule_bytes": 60194,
+    "max_source_bytes": 18000,
+    "max_line_count": 650,
+    "verification_rejected": true,
+    "verification_error": "invalid capsule type/length",
+    "analysis": "Capture source acceptance does not imply verifier acceptance for high JSON-escaping content.",
+    "scope": "Synthetic valid UTF-8 fixture; not the three present static public docs or evidence of unauthenticated source modification."
+  },
+  "safe_quota": {
+    "same_client": "synthetic-client",
+    "simulated_upstream_failure": true,
+    "reserved_rows_after_failure": 1,
+    "reserved_rows_after_same_key_reuse": 1,
+    "reserved_rows_after_second_unique_key": 2,
+    "same_key_retried_without_second_slot": true,
+    "analysis": "Quota slots count unique attempted keys on UTC day; retrying the same key remains possible. Whether failed attempts should consume a slot is a policy decision, not automatically a vulnerability.",
+    "production_db_untouched": true
+  },
+  "no_production_file_or_database_mutation": true
+}

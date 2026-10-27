@@ -1,6 +1,6 @@
 # EGM-R2｜Goldfish 独立设计审查适配规格（草案）
 
-> 日期：2026-10-27（北京时间）｜状态：DESIGN_ONLY + GATE_A_PARTIAL_PASS + GATE_B1_PASS + GATE_B2_SCOPED_PASS + GATE_B3_PILOT_COMPLETED + GATE_B3_R2_PARTIAL
+> 日期：2026-10-27（北京时间）｜状态：DESIGN_ONLY + GATE_A_PARTIAL_PASS + GATE_B1_PASS + GATE_B2_SCOPED_PASS + GATE_B3_PILOT_COMPLETED + GATE_B3_R2_PARTIAL + GATE_B3_R3_SCOPED_EXECUTION_PASS
 > 仓库：conanxin/agent-loop｜设计目标：在现有 CX-PAN Hub 之上增加可选的、证据优先的独立设计审查流程。
 > 来源研究： https://app.notion.com/p/40634a28189a81a4a14dc301f54e4af9
 > 注意：CX-PAN 既有 P10 是网页客户端真实安装/授权阶段；EGM 不占用这个编号。
@@ -119,12 +119,16 @@ output:
 - [x] 记录时间与模型实际 Token：普通 85.443 秒 / 12012 tokens；Goldfish 104.076 秒 / 12924 tokens，未观察到增量检出率优势。
 - [x] Gate B3-R2 已采用 Git 提交 `2312908` 的三份未经植入缺陷的真实源码包：紧凑 adaptive 条件第一轮 6 次尝试仅 2 次正常交付，P6/P9 四次超时，未得到三组完整质量比较。
 - [x] 成功的状态机配对产生四个候选 finding，本地 Hermes 在匿名、隐藏策略标签情况下将其归并为两类风险并全部定为 PARTIAL；没有得到经独立模型确认的真实增量缺陷。
+- [x] Gate B3-R3 针对同一 P6 精简提示词实测：M2.7 + medium 24.365 秒完成；M3.1 Flash + adaptive 115.095 秒超时（两模型配置同时不同，不能宣称模型单因素因果）。
+- [x] 在实际隔离的只读云端 OpenClaw 中，M2.7 + medium 对 P6/P9 两份较长输入的短回复诊断与完整冻结片段短 JSON 审查共 4/4 次正常交付，工具 schema 与实际调用都是 0。
+- [x] P6 `capture()` 生成的胶囊可超过 `verify()` 的 40k 序列化上限，该生产者/验证者不变量缺口已由临时 10,000 字节控制符输入复现；P9 首次失败请求预占用当天配额也已确认，但同幂等键仍可重试；均未修改生产代码。
+- [ ] B3-R3 还未通过多次重复、两模型同 thinking、真实供应商计费或所有复杂工作流的可靠性验收，M2.7 候选 profile 不得默认替换所有 Agent。
 - [ ] 真实未经植入缺陷的困难样本已开展，但**可交付的完整三组配对、不同模型重复、独立人类盲评和供应商真实费用**仍未验收。
 - [ ] 收益证据不足时不把 Goldfish 变为所有任务默认，更不向 P9 MCP 开放新的能力。
 
 如 Gate A 部分失败，不自动大范围修改 Hub 或 Worker。先记录实际失败原因，按最小差异修复。
 
-Gate B1 证据：docs/designs/egm-goldfish-gate-b-20261027.md。Gate B2 证据：docs/designs/egm-goldfish-gate-b2-20261027.md。Gate B3 受控对照数据：docs/designs/egm-goldfish-gate-b3-20261027.md。Gate B3-R2 未植入缺陷源码试验：docs/designs/egm-goldfish-gate-b3-r2-20261027.md。这些成果不是 Google 官方 EGM 插件集成证明，仍须在真实规格对照实验中核验审查价值。
+Gate B1 证据：docs/designs/egm-goldfish-gate-b-20261027.md。Gate B2 证据：docs/designs/egm-goldfish-gate-b2-20261027.md。Gate B3 受控对照数据：docs/designs/egm-goldfish-gate-b3-20261027.md。Gate B3-R2 未植入缺陷源码试验：docs/designs/egm-goldfish-gate-b3-r2-20261027.md。Gate B3-R3 模型执行稳定性对照与原文证据复现：docs/designs/egm-goldfish-gate-b3-r3-20261027.md。这些成果不是 Google 官方 EGM 插件集成证明，仍须在真实规格对照实验中核验审查价值。
 
 ## 8. 研究更新
 
