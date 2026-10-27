@@ -1,0 +1,18 @@
+[Unit]
+Description=CX-PAN P8 owner-approved OAuth2.1 authorization server (official MCP SDK)
+After=network-online.target cx-pan-hub.service
+Wants=cx-pan-hub.service
+
+[Service]
+Type=simple
+WorkingDirectory=%h/cx-pan-hub
+Environment=CX_PAN_OAUTH_PORT=18489
+ExecStart=/usr/bin/python3 %h/cx-pan-hub/oauth_server.py serve
+Restart=on-failure
+RestartSec=8
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+
+[Install]
+WantedBy=default.target

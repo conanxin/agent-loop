@@ -29,6 +29,9 @@ from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.routing import Mount, Route
+from oauth_store import RESOURCE as OAUTH_RESOURCE
+from oauth_store import SCOPE as OAUTH_SCOPE
+from oauth_store import verify_access as verify_oauth_access
 
 HOME = Path.home()
 CLIENTS = Path(os.getenv(
@@ -283,9 +286,22 @@ class BearerGate:
                 expected_digest,
             )
         )
+        # ChatGPT's native plugin cannot supply an arbitrary API key. P8
+        # additionally accepts a short-lived, scope/audience-checked OAuth
+        # access token. Claude continues to use its separate P7 credential.
+        if name == "chatgpt" and not valid and auth.startswith("Bearer "):
+            valid = verify_oauth_access(
+                supplied, resource=OAUTH_RESOURCE, scope=OAUTH_SCOPE
+            )
         if not valid:
+            metadata = (
+                'Bearer resource_metadata="https://www.conanxin.com/'
+                '.well-known/oauth-protected-resource/cxpan/chatgpt/mcp", '
+                'scope="tasks:safe", error="invalid_token"'
+                if name == "chatgpt" else 'Bearer realm="CX-PAN restricted MCP"'
+            )
             response = JSONResponse({"error": "unauthorized"}, status_code=401,
-                headers={"WWW-Authenticate": 'Bearer realm="CX-PAN restricted MCP"'})
+                headers={"WWW-Authenticate": metadata})
             await response(scope, receive, send)
             return
         await self.app(scope, receive, send)

@@ -27,6 +27,12 @@ agent-loop 最初只解决 OpenClaw 规划/审核 与 Hermes 执行/汇报 之�
 2026-10-26 已在可选的 `bridge/` 中新增并实测云端任务队列 + 本地 Claude Code 只读 Worker，原手工 relay 不变。详见 [bridge 使用与验收](bridge/README.md)。 P2 已增加 Hermes/OpenClaw 只读 Gateway 状态查询与任务心跳；不能将状态检查等同于模型级执行。
 
 
+## P8 ChatGPT OAuth 授权服务（2026-10-27）
+
+现已在腾讯云实际部署基于官方 MCP Python SDK 的 OAuth 授权码/PKCE S256 服务。ChatGPT 入口通过标准受保护资源元数据完成发现，Token 限定 `tasks:safe` 和正确资源地址。生产合成客户端已完成 DCR → Owner 授权 → OAuth Token → 真正 MCP Echo → 刷新 → 撤销，未保留活动测试 Token。DCR 默认关闭，仅用户在可信终端短时开启；不改变 Claude Chat 独立 Bearer 凭据。
+
+**真正的 ChatGPT Plugins UI 尚需本人安装并显式授权；Claude Chat 自定义连接器 UI 也还需本人连接。** 详见 [P8 OAuth 连接与运维手册](bridge/P8_OAUTH_OPERATIONS.md)，不要将合成测试通过误称为两个聊天界面已安装成功。
+
 ## P7 专用 MCP 接口（2026-10-26）
 
 `bridge/mcp_gateway.py` 已经通过腾讯云已有 HTTPS 站点提供两条独立、Bearer 保护的 MCP 测试入口，ChatGPT 专用测试凭据与 Claude 凭据分开，四个工具只允许安全任务查询与公开源文采集。真实 HTTPS 客户端双边各完成一次 Echo 往返；Claude MCP 客户端还能读取 ChatGPT MCP 客户端的安全任务。**真正 Claude Chat UI 需要用户连接；ChatGPT 原生 Plugins 还需 OAuth 2.1，不能以 API-key 测试成功冒充原生安装成功。** 详见 [P7 MCP 使用和权限说明](bridge/README.md)。

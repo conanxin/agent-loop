@@ -1,6 +1,14 @@
 # agent-loop 原始目标复盘与 CX-PAN 接入边界（2026-10-26）
 
 
+## 当前权威状态（2026-10-27 P8 更新）
+
+- **生产可用的 ChatGPT OAuth 端点已搭建：** 腾讯云现有 Caddy HTTPS 独立路由到回环 `cx-pan-oauth.service`（18489），标准发现 `/.well-known/oauth-authorization-server`、`/.well-known/oauth-protected-resource/cxpan/chatgpt/mcp`、授权 `/authorize`、Token `/token`、DCR `/register` 和撤销 `/revoke`。资源 MCP `cx-pan-mcp.service`（18488）同时支持 P7 旧凭据及经过 Resource/Scope/TTL/Revocation 验证的 OAuth access token。
+- **安全边界：** OAuth 申请只有 `tasks:safe`，客户端注册默认关闭且需要 SSH Owner 临时开放；同意授权需用户从浏览器读 Request ID 并通过可信终端显式批准，没有公开的“点一下即批准”按钮。
+- **生产合成客户端验收：** 真正公网 HTTPS DCR → S256 授权码 → 审批 → Token → MCP initialize / safe Echo 任务 COMPLETED → Refresh → Revocation；测试 Token 已全部吊销，云端有效 Access/Refresh 计数为零。
+- **不能误报：** 当前并未观察真实 ChatGPT Plugins 用户界面或 Claude Chat 网页端完成连接。ChatGPT native UI 仍需要用户在 Plugins 中安装并授权；Claude 仍沿用 P7 独立 Bearer。该 P8 为 SDK-backed 自建 Auth 服务，CIMD 未实现，当前使用 DCR；在接私有文件或提升付费权限前需要专门安全审计。详见 `bridge/P8_OAUTH_OPERATIONS.md`。
+- 下方 P0–P7 保留历史记录，以 P8 本节和对应 Notion 页面为最新阶段状态。
+
 ## 当前权威状态（2026-10-26 P7 更新）
 
 - P7 已通过 Caddy 现有 TLS 站点部署两条独立、需要 Bearer 认证的标准 MCP Streamable HTTP 路径：`https://www.conanxin.com/cxpan/chatgpt/mcp`、`https://www.conanxin.com/cxpan/claude/mcp`。腾讯云后端 MCP 在回环 `127.0.0.1:18488`，核心 Hub 在 `127.0.0.1:18487`，没有开放额外公网端口；原网站首页及已有 Agent Gateway 状态正常。

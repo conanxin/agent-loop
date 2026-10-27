@@ -1,6 +1,14 @@
 # Changelog
 
 ## Unreleased (2026-10-26)
+### P8 owner-approved OAuth 2.1 for native ChatGPT plugins
+- Added a separate loopback OAuth authorization service using the official Python MCP SDK authorization-code + PKCE S256, client registration, short access tokens, refresh rotation and revocation.
+- Added resource server checks for OAuth issuer audience, expiry, scope and revoked tokens; P7 Claude Bearer and safe-task ACL remain unchanged.
+- Owner consent requires authenticated SSH approval; public DCR registration is closed by default and can be temporarily enabled by the owner.
+- Verified production HTTPS synthetic OAuth enrollment → MCP safe Echo → refresh → family revocation; no live synthetic test tokens remain.
+- Client UI integration is not yet confirmed: ChatGPT Plugins and Claude Chat require the owner's explicit account actions.
+
+
 
 ### P7 restricted MCP gateway and client-scoped credentials
 - Added two separately authenticated, stateless MCP Streamable HTTP endpoints (ChatGPT test client and Claude custom connector).

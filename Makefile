@@ -34,6 +34,11 @@ validate:
 	@test -f bridge/evidence.py
 	@test -f bridge/source_review.py
 	@test -f bridge/mcp_gateway.py
+	@test -f bridge/oauth_store.py
+	@test -f bridge/oauth_server.py
+	@test -f bridge/oauth_probe.py
+	@test -f bridge/P8_OAUTH_OPERATIONS.md
+	@test -f bridge/systemd/cx-pan-oauth.service
 	@test -f bridge/mcp_probe.py
 	@test -f bridge/systemd/cx-pan-mcp.service
 	@test -f bridge/systemd/cx-pan-cloud-openclaw-worker.service

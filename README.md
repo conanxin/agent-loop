@@ -31,6 +31,12 @@ export PATH="$HOME/.agent-loop/bin:$PATH"
 
 For custom paths or step-by-step install, see [docs/INSTALL.md](docs/INSTALL.md).
 
+## P8 OAuth 2.1 owner approval
+
+A separate Tencent loopback OAuth authorization server (using the official MCP Python SDK) now supports DCR, authorization-code+PKCE S256, audience/scoped access tokens, refresh rotation and revocation for the restricted ChatGPT MCP resource. An authenticated SSH owner must explicitly approve each OAuth linking request; DCR registration is closed by default and opens only for a short owner-controlled interval. Synthetic HTTPS end-to-end OAuth and safe Echo tests passed, with test tokens revoked.
+
+Native ChatGPT plugin installation and real Claude Chat connector installation **still require the user to act in those clients**; neither is marked complete. See [P8 OAuth operations](bridge/P8_OAUTH_OPERATIONS.md).
+
 ## Project scope and CX-PAN integration
 
 The original protocol is a manual OpenClaw Planner/Judge and Hermes Executor/Reporter
