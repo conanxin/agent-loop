@@ -31,6 +31,21 @@ export PATH="$HOME/.agent-loop/bin:$PATH"
 
 For custom paths or step-by-step install, see [docs/INSTALL.md](docs/INSTALL.md).
 
+## P9 private CX-PAN plugin and owner-managed OAuth clients
+
+An account-private CX-PAN v0.1.0 plugin is now packaged using the standard
+portable Plugin/MCP manifests and OAuth DCR. [Open the private CX-PAN
+plugin](https://chatgpt.com/plugins/plugins_6ae016c0348881918f74bd2c023ab5fe).
+It is **not installed, linked, or approved** automatically. The user must
+complete any ChatGPT/Claude browser connection and consent.
+
+The `bridge/connect_chatgpt.py` interactive TTY assistant enforces direct
+human START/APPROVE actions, validates callback/scope/audience and closes
+DCR afterward. The separate OAuth owner CLI now supports audit, registered
+client listing, request inspection and full per-client revocation. Adds
+per-window DCR limits, per-client pending limits and honest MCP read-only
+tool annotations. See [P9 owner and client instructions](bridge/P9_CONNECTOR_OPERATIONS.md).
+
 ## P8 OAuth 2.1 owner approval
 
 A separate Tencent loopback OAuth authorization server (using the official MCP Python SDK) now supports DCR, authorization-code+PKCE S256, audience/scoped access tokens, refresh rotation and revocation for the restricted ChatGPT MCP resource. An authenticated SSH owner must explicitly approve each OAuth linking request; DCR registration is closed by default and opens only for a short owner-controlled interval. Synthetic HTTPS end-to-end OAuth and safe Echo tests passed, with test tokens revoked.

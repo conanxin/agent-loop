@@ -1,6 +1,14 @@
 # agent-loop 原始目标复盘与 CX-PAN 接入边界（2026-10-26）
 
 
+## 当前权威状态（2026-10-27 P9 更新）
+
+- **私有 ChatGPT 插件已创建但未安装：** `CX-PAN v0.1.0`、scope USER、discoverability PRIVATE，入口 [打开插件](https://chatgpt.com/plugins/plugins_6ae016c0348881918f74bd2c023ab5fe)。通过官方插件包的 `mcp.json` 指向既有 `https://www.conanxin.com/cxpan/chatgpt/mcp`、OAuth DCR 与唯一 `tasks:safe`；不附带任何密钥。
+- **OAuth 安全治理已增强：** 受信任 Owner 可查看已登记客户端、核对请求 callback/scope/到期时间、检索审计和按 client_id 撤销所有相关 access/refresh/codes/pending；DCR 新增窗口频率限制（30 分钟内最多 5 次），授权 pending 8/客户端、30/全局。OAuth AS metadata 现在明确发布公共客户端 `none` 与 secret_post/basic 三种受支持方法。MCP tools/list 中三个工具标 readOnlyHint=true，`task_submit_safe` 显示是幂等的队列写入。
+- **实际协议验收：** 生产公网合成 OAuth 流程再次 PASS，临时 OAuth 测试客户端已删除，云端 Active Access=0、Active Refresh=0、registered client=0、pending request=0、DCR CLOSED。合成测试并不代表用户 ChatGPT/Claude Chat Web UI 已完成本人 OAuth 安装。
+- **一条终端命令：** `python3 bridge/connect_chatgpt.py` 将在用户本人可信交互式终端中打开短时 DCR、核对浏览器一次性请求、明确 START 和 APPROVE 后完成授权，最后关闭 DCR。非交互终端/Agent 调用拒绝。完整手册见 `bridge/P9_CONNECTOR_OPERATIONS.md`。
+- 下文 P0–P8 内容保留历史，不要将 P9 完成的插件**创建**写作已连接。P10 需要用户真实客户端 UI 操作、权限确认与实际调用回执。
+
 ## 当前权威状态（2026-10-27 P8 更新）
 
 - **生产可用的 ChatGPT OAuth 端点已搭建：** 腾讯云现有 Caddy HTTPS 独立路由到回环 `cx-pan-oauth.service`（18489），标准发现 `/.well-known/oauth-authorization-server`、`/.well-known/oauth-protected-resource/cxpan/chatgpt/mcp`、授权 `/authorize`、Token `/token`、DCR `/register` 和撤销 `/revoke`。资源 MCP `cx-pan-mcp.service`（18488）同时支持 P7 旧凭据及经过 Resource/Scope/TTL/Revocation 验证的 OAuth access token。

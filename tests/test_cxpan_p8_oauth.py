@@ -110,6 +110,8 @@ class OAuthFlowTests(unittest.TestCase):
         data=doc.json()
         self.assertEqual(data["issuer"],oauth_store.ISSUER)
         self.assertEqual(data["code_challenge_methods_supported"],["S256"])
+        self.assertIn("none",data["token_endpoint_auth_methods_supported"])
+        self.assertIn("client_secret_post",data["token_endpoint_auth_methods_supported"])
         self.assertEqual(data["scopes_supported"],["tasks:safe"])
         self.assertIn(data["registration_endpoint"],["https://www.conanxin.com/register"])
         prm=self.client.get(

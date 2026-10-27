@@ -27,6 +27,14 @@ agent-loop 最初只解决 OpenClaw 规划/审核 与 Hermes 执行/汇报 之�
 2026-10-26 已在可选的 `bridge/` 中新增并实测云端任务队列 + 本地 Claude Code 只读 Worker，原手工 relay 不变。详见 [bridge 使用与验收](bridge/README.md)。 P2 已增加 Hermes/OpenClaw 只读 Gateway 状态查询与任务心跳；不能将状态检查等同于模型级执行。
 
 
+## P9 私有插件与本人授权连接（2026-10-27）
+
+已在 ChatGPT 个人插件空间新建**未安装、未授权**的私有 `CX-PAN v0.1.0` 插件：[打开私有插件](https://chatgpt.com/plugins/plugins_6ae016c0348881918f74bd2c023ab5fe)。插件直接连接既有受限 MCP，配置 OAuth DCR，仅授予 `tasks:safe`。首次连接需用户在 ChatGPT Web 本人操作，不通过聊天传递 Token。
+
+`python3 bridge/connect_chatgpt.py` 提供一个真实交互式终端引导：`START` 临时开启 DCR、从浏览器隐藏输入 Request ID、核对 callback/scope、精确输入 `APPROVE` 才授权，随后关闭 DCR。新增服务器 Owner 审计、单 Client 撤销、注册/待审配额与工具 readOnlyHint 注释；没有新增任何付费模型、任意命令、NAS/私有文件的公网权限。
+
+**真正 ChatGPT / Claude Chat 的用户界面连接尚未实机完成。** [P9 连接与权限手册](bridge/P9_CONNECTOR_OPERATIONS.md)。
+
 ## P8 ChatGPT OAuth 授权服务（2026-10-27）
 
 现已在腾讯云实际部署基于官方 MCP Python SDK 的 OAuth 授权码/PKCE S256 服务。ChatGPT 入口通过标准受保护资源元数据完成发现，Token 限定 `tasks:safe` 和正确资源地址。生产合成客户端已完成 DCR → Owner 授权 → OAuth Token → 真正 MCP Echo → 刷新 → 撤销，未保留活动测试 Token。DCR 默认关闭，仅用户在可信终端短时开启；不改变 Claude Chat 独立 Bearer 凭据。

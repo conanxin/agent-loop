@@ -36,6 +36,9 @@ validate:
 	@test -f bridge/mcp_gateway.py
 	@test -f bridge/oauth_store.py
 	@test -f bridge/oauth_server.py
+	@test -f bridge/oauth_admin.py
+	@test -f bridge/connect_chatgpt.py
+	@test -f bridge/P9_CONNECTOR_OPERATIONS.md
 	@test -f bridge/oauth_probe.py
 	@test -f bridge/P8_OAUTH_OPERATIONS.md
 	@test -f bridge/systemd/cx-pan-oauth.service

@@ -77,6 +77,14 @@ def db_connect(create=False):
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS audit_log(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            at INTEGER NOT NULL,
+            event TEXT NOT NULL,
+            client_id TEXT,
+            note TEXT NOT NULL DEFAULT ''
+        );
+        CREATE INDEX IF NOT EXISTS audit_event_client ON audit_log(client_id);
         """)
         os.chmod(OAUTH_DB, 0o600)
     return db

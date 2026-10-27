@@ -25,6 +25,7 @@ from typing import Literal
 
 import uvicorn
 from mcp.server.fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
@@ -165,7 +166,12 @@ def tools_for(principal):
         transport_security=security,
     )
 
-    @server.tool(name="agents_list", description="List only the two SAFE submit capabilities of CX-PAN.")
+    @server.tool(
+        name="agents_list",
+        description="List only the two SAFE submit capabilities of CX-PAN.",
+        annotations=ToolAnnotations(readOnlyHint=True,destructiveHint=False,
+                                    openWorldHint=False),
+    )
     def agents_list() -> dict:
         return {
             "principal": principal,
@@ -178,7 +184,12 @@ def tools_for(principal):
             "daily_new_task_limit": MAX_DAILY_UNIQUE,
         }
 
-    @server.tool(name="task_get", description="Inspect an authorized P7 task by its task_id.")
+    @server.tool(
+        name="task_get",
+        description="Inspect an authorized P7 task by its task_id.",
+        annotations=ToolAnnotations(readOnlyHint=True,destructiveHint=False,
+                                    openWorldHint=False),
+    )
     def task_get(task_id: str) -> dict:
         if not UUID.fullmatch(task_id):
             raise ValueError("invalid task_id")
@@ -191,7 +202,12 @@ def tools_for(principal):
             "run_id": t.get("run_id"),
         }
 
-    @server.tool(name="task_result", description="Read the stored result of a completed authorized P7 task.")
+    @server.tool(
+        name="task_result",
+        description="Read the stored result of a completed authorized P7 task.",
+        annotations=ToolAnnotations(readOnlyHint=True,destructiveHint=False,
+                                    openWorldHint=False),
+    )
     def task_result(task_id: str) -> dict:
         if not UUID.fullmatch(task_id):
             raise ValueError("invalid task_id")
@@ -212,7 +228,9 @@ def tools_for(principal):
             "Submit only a bounded echo or a whitelisted PUBLIC agent-loop "
             "document capture. Requires a caller-chosen stable idempotency_key. "
             "No paid model invocation, file edits, arbitrary paths or shell."
-        )
+        ),
+        annotations=ToolAnnotations(readOnlyHint=False,destructiveHint=False,
+                                    idempotentHint=True,openWorldHint=False),
     )
     def task_submit_safe(
         target: Literal["echo.local", "repo.evidence.local"],

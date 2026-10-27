@@ -27,7 +27,7 @@ from mcp.server.auth.provider import (
     TokenError, RegistrationError, AuthorizeError,
 )
 from mcp.server.auth.routes import (
-    create_auth_routes, create_protected_resource_routes
+    create_auth_routes, create_protected_resource_routes, build_metadata
 )
 from mcp.server.auth.settings import ClientRegistrationOptions, RevocationOptions
 from mcp.shared.auth import OAuthClientInformationFull
@@ -39,6 +39,10 @@ from starlette.routing import Route
 from oauth_store import (
     OAUTH_DB, RESOURCE, ISSUER, SCOPE, MAX_AUTHORIZED_CLIENTS,
     digest, db_connect, registration_is_open, set_registration_window,
+)
+from oauth_admin import (
+    record_event, registration_capacity, pending_capacity, request_info,
+    registered_clients, client_metadata, revoke_client, recent_audit,
 )
 
 PENDING_AGE = 900
@@ -138,11 +142,13 @@ class OwnerApprovalOAuth(OAuthAuthorizationServerProvider[
                 (client_info.client_id,)
             ).fetchone()
             count=con.execute("SELECT COUNT(*) FROM clients").fetchone()[0]
-            if not exists and count>=MAX_AUTHORIZED_CLIENTS:
+            if not exists and (
+                count>=MAX_AUTHORIZED_CLIENTS or not registration_capacity(con)
+            ):
                 con.rollback()
                 raise RegistrationError(
                     error="invalid_client_metadata",
-                    error_description="Client registration quota exceeded"
+                    error_description="Client registration rate/quota exceeded"
                 )
             con.execute(
                 "INSERT OR IGNORE INTO clients(client_id,client_json,created_at)"
@@ -151,6 +157,8 @@ class OwnerApprovalOAuth(OAuthAuthorizationServerProvider[
                  client_info.model_dump_json(exclude_none=True),
                  int(time.time()))
             )
+            if not exists:
+                record_event(con,"client.registered",client_info.client_id)
             con.commit()
         finally:
             con.close()
@@ -177,6 +185,13 @@ class OwnerApprovalOAuth(OAuthAuthorizationServerProvider[
         req=secrets.token_urlsafe(32)
         con=db_connect(create=True)
         try:
+            con.execute("BEGIN IMMEDIATE")
+            if not pending_capacity(con,client.client_id):
+                con.rollback()
+                raise AuthorizeError(
+                    error="temporarily_unavailable",
+                    error_description="Too many concurrent authorization requests"
+                )
             con.execute(
                 "INSERT INTO pending(request_digest,client_id,scopes_json,"
                 "redirect_uri,redirect_explicit,code_challenge,state,resource,"
@@ -337,7 +352,7 @@ def owner_approve(request_id, verdict):
     try:
         con.execute("BEGIN IMMEDIATE")
         row=con.execute(
-            "SELECT decision,expires_at,consumed FROM pending WHERE request_digest=?",
+            "SELECT client_id,decision,expires_at,consumed FROM pending WHERE request_digest=?",
             (digest(request_id),)
         ).fetchone()
         if (not row or row["decision"]!="pending" or row["consumed"]
@@ -346,6 +361,8 @@ def owner_approve(request_id, verdict):
             raise ValueError("Request absent, already decided or expired")
         con.execute("UPDATE pending SET decision=? WHERE request_digest=?",
                     (verdict,digest(request_id)))
+        record_event(con,"owner.approved" if verdict=="approved" else "owner.denied",
+                     row["client_id"],"request_hash_prefix="+digest(request_id)[:18])
         con.commit()
         return True
     finally:
@@ -442,6 +459,29 @@ Do not approve unexpected requests.</p></html>"""
             con.close()
 
 
+async def metadata_with_public_client_methods(_request):
+    """Describe the public PKCE DCR client method supported by this server.
+
+    MCP SDK 1.26 builds AS metadata with only client_secret_{post,basic}
+    despite TokenHandler also supporting registered public DCR clients
+    (token_endpoint_auth_method=none). Explicitly advertise that actual
+    tested method without changing SDK token validation.
+    """
+    metadata=build_metadata(
+        AnyHttpUrl(ISSUER),None,
+        ClientRegistrationOptions(
+            enabled=True, valid_scopes=[SCOPE], default_scopes=[SCOPE]
+        ),
+        RevocationOptions(enabled=True),
+    )
+    methods=list(metadata.token_endpoint_auth_methods_supported or [])
+    metadata.token_endpoint_auth_methods_supported=[
+        "none", *[m for m in methods if m!="none"]
+    ]
+    return JSONResponse(metadata.model_dump(mode="json",exclude_none=True),
+                        headers={"Cache-Control":"no-store"})
+
+
 def create_app():
     provider=OwnerApprovalOAuth()
     issuer=AnyHttpUrl(ISSUER)
@@ -452,6 +492,12 @@ def create_app():
         ),
         revocation_options=RevocationOptions(enabled=True),
     )
+    routes=[
+        Route("/.well-known/oauth-authorization-server",
+              metadata_with_public_client_methods,methods=["GET","OPTIONS"])
+        if route.path=="/.well-known/oauth-authorization-server"
+        else route for route in routes
+    ]
     routes += create_protected_resource_routes(
         AnyHttpUrl(RESOURCE),[issuer],scopes_supported=[SCOPE],
         resource_name="CX-PAN restricted safe tasks",
@@ -467,6 +513,12 @@ def main():
     owner=sub.add_parser("owner")
     owner_sub=owner.add_subparsers(dest="op",required=True)
     owner_sub.add_parser("list")
+    owner_sub.add_parser("clients")
+    owner_sub.add_parser("audit")
+    request_info_arg=owner_sub.add_parser("request-info")
+    request_info_arg.add_argument("request_id")
+    revoke_arg=owner_sub.add_parser("revoke-client")
+    revoke_arg.add_argument("client_id")
     win=owner_sub.add_parser("registration-open")
     win.add_argument("--minutes",type=int,default=10)
     owner_sub.add_parser("registration-close")
@@ -479,11 +531,36 @@ def main():
             if not (1 <= args.minutes <= 30):
                 parser.error("enrollment window must be 1..30 minutes")
             set_registration_window(args.minutes*60)
+            with db_connect(create=True) as con:
+                record_event(con,"registration.open",note=f"minutes={args.minutes}")
+                con.commit()
             print("OAuth DCR enrollment window opened for",args.minutes,"minutes.")
             return 0
         if args.op=="registration-close":
             set_registration_window(0)
+            with db_connect(create=True) as con:
+                record_event(con,"registration.close")
+                con.commit()
             print("OAuth DCR enrollment window closed.")
+            return 0
+        if args.op=="clients":
+            print(json.dumps(registered_clients(),ensure_ascii=False,indent=2))
+            return 0
+        if args.op=="audit":
+            print(json.dumps(recent_audit(),ensure_ascii=False,indent=2))
+            return 0
+        if args.op=="request-info":
+            info=request_info(args.request_id)
+            if info is None:
+                print("Request not found")
+                return 1
+            print(json.dumps(info,ensure_ascii=False,indent=2))
+            return 0
+        if args.op=="revoke-client":
+            if not revoke_client(args.client_id):
+                print("Client not found")
+                return 1
+            print("Client disabled and its tokens/codes/pending grants invalidated.")
             return 0
         if args.op=="list":
             print("OAuth DCR enrollment currently", "OPEN" if registration_is_open() else "CLOSED")

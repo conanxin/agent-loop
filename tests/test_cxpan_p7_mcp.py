@@ -119,6 +119,16 @@ class RestrictedMCPTests(unittest.TestCase):
             self.assertEqual(set(names),
                              {"agents_list", "task_get", "task_result",
                               "task_submit_safe"})
+            for item in result.json()["result"]["tools"]:
+                annotations=item.get("annotations") or {}
+                expected_read_only=item["name"]!="task_submit_safe"
+                self.assertEqual(
+                    annotations.get("readOnlyHint"),expected_read_only,
+                    item["name"]
+                )
+                self.assertFalse(annotations.get("destructiveHint"))
+            # The task-submit tool creates a ledger work item; it cannot be
+            # misrepresented as read-only to ChatGPT or Claude plans.
             caps = self.rpc(principal, "tools/call", {
                 "name": "agents_list", "arguments": {}
             })

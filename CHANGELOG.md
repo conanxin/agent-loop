@@ -1,6 +1,15 @@
 # Changelog
 
 ## Unreleased (2026-10-26)
+
+### P9 account-private plugin and security-hardened owner OAuth management
+- Created private CX-PAN v0.1.0 ChatGPT plugin with OAuth DCR manifest, safe tool scope and no bundled credentials.
+- Added trusted interactive owner onboarding requiring START and APPROVE, hidden high-entropy Request ID entry, callback/scope/audience checks and final DCR closure.
+- Added OAuth owner audit, safe client inventory, request inspection and full client revocation (tokens, refresh, codes, pending approvals).
+- Enforced five registrations per 30 minutes, eight outstanding approvals per client and 30 globally.
+- Corrected OAuth metadata to advertise supported public DCR method none, and marked MCP tools read-only versus queue-creating in SDK annotations.
+- Revalidated real HTTPS synthetic OAuth task exchange, token refresh and revocation; cleaned up synthetic DCR client.
+
 ### P8 owner-approved OAuth 2.1 for native ChatGPT plugins
 - Added a separate loopback OAuth authorization service using the official Python MCP SDK authorization-code + PKCE S256, client registration, short access tokens, refresh rotation and revocation.
 - Added resource server checks for OAuth issuer audience, expiry, scope and revoked tokens; P7 Claude Bearer and safe-task ACL remain unchanged.

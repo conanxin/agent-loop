@@ -16,6 +16,7 @@ from urllib.parse import parse_qs, urlparse
 import httpx
 from oauth_server import owner_approve
 from oauth_store import set_registration_window
+from oauth_admin import revoke_client
 
 ORIGIN="https://www.conanxin.com"
 RESOURCE=ORIGIN+"/cxpan/chatgpt/mcp"
@@ -167,16 +168,24 @@ def main():
     },headers={**headers,"Authorization":"Bearer "+refreshed})
     assert blocked.status_code==401
     print("SYNTHETIC_OAUTH_REVOCATION_PASS",flush=True)
+    assert revoke_client(cid), "synthetic client should be removed from owner registry"
+    print("SYNTHETIC_DCR_CLIENT_REMOVED",flush=True)
     set_registration_window(0)
     print("SYNTHETIC_DCR_REGISTRATION_WINDOW_CLOSED",flush=True)
     print("SYNTHETIC_OAUTH_ONLY_NO_NATIVE_CHATGPT_ACCOUNT_CONNECTED",flush=True)
     return 0
 
 if __name__=="__main__":
-    try:sys.exit(main())
+    try:
+        sys.exit(main())
     except Exception as exc:
-        print("P8_SYNTHETIC_CHECK_FAILED",type(exc).__name__,
-              # no URL or request body, no tokens
-              str(exc)[:200] if not isinstance(exc,httpx.HTTPStatusError) else
+        print("P9_SYNTHETIC_CHECK_FAILED",type(exc).__name__,
+              str(exc)[:150] if not isinstance(exc,httpx.HTTPStatusError) else
               f"HTTP_{exc.response.status_code}",file=sys.stderr)
         sys.exit(1)
+    finally:
+        # A failed synthetic probe must never leave DCR enrollment open.
+        try:
+            set_registration_window(0)
+        except Exception:
+            pass
