@@ -1,0 +1,180 @@
+{
+  "schema": "cxpan.egm_b3r4.receipt/1",
+  "date": "2026-10-27",
+  "base_commit": "1aa219392c0c80b597b328f4b5deb78f9873c8a8",
+  "patch_commit": "bd35e932d425b6666723b39edaef430a8c3ca633",
+  "branch": "egm-b3-r4-capsule-limit",
+  "status": "CANDIDATE_FIX_VERIFIED_NOT_DEPLOYED",
+  "production_main_modified": false,
+  "production_services_restarted": false,
+  "code_change": {
+    "file": "bridge/evidence.py",
+    "wire_budget_bytes": 40000,
+    "source_budget_bytes": 18000,
+    "source_line_limit": 650,
+    "effect": "Reject over-budget canonical UTF-8 JSON during capture; verifier limit unchanged.",
+    "candidate_sha256": "292710756bd063effac4ccafda2a157d5ca3511e094adafec7699ef796d0eec0"
+  },
+  "verification": {
+    "red": {
+      "tests": 8,
+      "failures": 3,
+      "errors": 0
+    },
+    "p6_green": {
+      "tests": 16,
+      "failures": 0,
+      "errors": 0
+    },
+    "worktree_full": {
+      "tests": 140,
+      "errors": 2,
+      "cause": ".git is a file in linked worktrees; existing worker requires a directory",
+      "tests_with_errors": [
+        "test_claude_error_parses_only_safe_subtype_not_raw_content",
+        "test_fixed_repo_validation_uses_allowlisted_unittest_command"
+      ]
+    },
+    "normal_clone_full": {
+      "tests": 140,
+      "errors": 0,
+      "failures": 0,
+      "elapsed_s": 59.316,
+      "exit_code": 0,
+      "code_commit": "bd35e932d425b6666723b39edaef430a8c3ca633"
+    },
+    "public_document_compatibility": [
+      {
+        "path": "README.md",
+        "bytes": 12755,
+        "identical_canonical_bytes": true,
+        "capsule_sha256": "a57ac3f9ebdb583d0a4963c8b7c752fec4290de5dced020365f0a70ef28fe4e4"
+      },
+      {
+        "path": "docs/SCHEMAS.md",
+        "bytes": 5444,
+        "identical_canonical_bytes": true,
+        "capsule_sha256": "62b257fa81275356153978ab5fe66505657e0eecd917296b62f33dcc508ba226"
+      },
+      {
+        "path": "docs/SPEC.md",
+        "bytes": 5672,
+        "identical_canonical_bytes": true,
+        "capsule_sha256": "cd569af9f6ecf36514493178444aae0b99cdc24b7efdb37d4927d96845be41b2"
+      }
+    ],
+    "boundary_cases": [
+      {
+        "wire_bytes": 40000,
+        "result": "ACCEPT_AND_VERIFY"
+      },
+      {
+        "wire_bytes": 40001,
+        "result": "REJECT_IN_CAPTURE"
+      },
+      {
+        "wire_bytes": 60194,
+        "result": "REJECT_IN_CAPTURE"
+      },
+      {
+        "wire_bytes": 40393,
+        "python_characters": 38393,
+        "result": "REJECT_IN_CAPTURE"
+      }
+    ],
+    "logs_sha256": {
+      "red-tests.log": "0c9753d0b6948a48ae569a6a905e6f4013446a570cd60074bc3654d2b0448d87",
+      "green-p6-tests.log": "0bc33393ea8db50e6c689281d6921fe561f97e2d9aec39d48726c734314f9619",
+      "full-contract-tests.log": "eb9c5ceccaf4e70aad4bbd611c6eb6e6d8f6df408ccfbd3f2ae0add82dced3ee",
+      "full-contract-clone.log": "a13e489f0a8851dae04f34111f3dc6b7ca0c84dae6c6eb39b005bfe303e21284"
+    }
+  },
+  "repeat_review": {
+    "runner_reused_from_r3": true,
+    "new_paid_requests": 2,
+    "new_completed": 2,
+    "bounded_review_cumulative_completed": 4,
+    "bounded_review_cumulative_attempts": 4,
+    "rows": [
+      {
+        "case": "p6-evidence-integrity",
+        "status": "COMPLETED",
+        "old_seconds": 38.881,
+        "new_seconds": 49.82,
+        "old_tokens": 8143,
+        "new_tokens": 8173,
+        "same_source_sha": true,
+        "same_prompt_sha": true,
+        "source_sha256": "42424215c94abbeb58d64b0dcaad8ac229614046e7e12dcd4a3fd0861ff87455",
+        "prompt_sha256": "6a5c1f91cc4dbe7d1468aa0d0c4b5da0b303f31722271cab4f2372b4bbe46a48",
+        "actual_model": "MiniMax-M2.7",
+        "thinking": "medium",
+        "model_completed": true,
+        "tool_schemas": 0,
+        "tool_calls": 0,
+        "parseable": true,
+        "prior_session_id": "1fe1de9f-8792-4f0d-b79a-d3281935a1d5",
+        "new_session_id": "e3aee9ae-cdeb-488b-962e-7bb4067a7df8",
+        "finding_count": 1,
+        "source_refs_in_range": true
+      },
+      {
+        "case": "p9-public-mcp-boundary",
+        "status": "COMPLETED",
+        "old_seconds": 32.433,
+        "new_seconds": 55.009,
+        "old_tokens": 7219,
+        "new_tokens": 8993,
+        "same_source_sha": true,
+        "same_prompt_sha": true,
+        "source_sha256": "645a04de6bea3d09ca3ddcf0e359ce2955bc575348c8b2d792ac90c4165fe6a3",
+        "prompt_sha256": "c6b968dc2c84e869c4991f931f71f2ec6e27dc64806cd40a4dbddcb2e878f90c",
+        "actual_model": "MiniMax-M2.7",
+        "thinking": "medium",
+        "model_completed": true,
+        "tool_schemas": 0,
+        "tool_calls": 0,
+        "parseable": true,
+        "prior_session_id": "d8c2e067-9903-43de-bc75-1ab3d700e8b4",
+        "new_session_id": "5eb8d814-8dd6-4327-a290-fbc7837859d0",
+        "finding_count": 1,
+        "source_refs_in_range": true
+      }
+    ],
+    "new_total_tokens": 17166,
+    "limits": [
+      "Two fixed inputs, two runs each; not an uptime/SLA estimate.",
+      "The prompt contains the frozen old source, not the candidate fix.",
+      "Delivery and citation validity do not establish finding correctness."
+    ]
+  },
+  "new_findings_assessment": [
+    {
+      "case": "p6-evidence-integrity",
+      "claim": "Intermediate symlink bypass",
+      "verdict": "NOT_APPLICABLE_TO_CURRENT_ALLOWLIST",
+      "evidence": [
+        "bridge/evidence.py:15-19",
+        "bridge/evidence.py:25-33"
+      ],
+      "reason": "Only README.md, docs/SPEC.md and docs/SCHEMAS.md are allowed; no unchecked intermediate directory exists for these paths."
+    },
+    {
+      "case": "p9-public-mcp-boundary",
+      "claim": "Cross-client safe task visibility",
+      "verdict": "INTENDED_SHARED_SAFE_TASK_BEHAVIOR_NOT_CONFIRMED_VULNERABILITY",
+      "evidence": [
+        "bridge/README.md:282-294",
+        "tests/test_cxpan_p7_mcp.py:139-161"
+      ],
+      "reason": "The existing same-owner ChatGPT/Claude contract explicitly permits both clients to read shared safe-task results; private historical tasks remain outside the scope."
+    }
+  ],
+  "not_done": [
+    "Production deployment",
+    "Global model switching",
+    "Official EGM plugin installation",
+    "Full EGM multistage benchmark",
+    "Independent human-blinded quality evaluation"
+  ]
+}

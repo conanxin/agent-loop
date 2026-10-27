@@ -19,6 +19,7 @@ SOURCES = frozenset({
 })
 MAX_BYTES = 18000
 MAX_LINES = 650
+MAX_CAPSULE_BYTES = 40000
 
 
 def _read_source(root, name):
@@ -57,13 +58,17 @@ def capture(root, name):
         "text": text,
     }
     # Serialize identically for SHA-256 checks across Python 3.10/3.12.
-    return json.dumps(capsule, ensure_ascii=False, sort_keys=True,
-                      separators=(",", ":"))
+    raw = json.dumps(capsule, ensure_ascii=False, sort_keys=True,
+                     separators=(",", ":"))
+    # JSON escaping can exceed the wire quota even when source bytes fit.
+    if len(raw.encode("utf-8")) > MAX_CAPSULE_BYTES:
+        raise ValueError("serialized capsule exceeds evidence quota")
+    return raw
 
 
 def verify(raw_capsule, expected_outer_sha256=None):
     """Verify BOTH task-result digest (if supplied) and original file bytes."""
-    if not isinstance(raw_capsule, str) or len(raw_capsule.encode("utf-8")) > 40000:
+    if not isinstance(raw_capsule, str) or len(raw_capsule.encode("utf-8")) > MAX_CAPSULE_BYTES:
         raise ValueError("invalid capsule type/length")
     if expected_outer_sha256 is not None:
         outer = hashlib.sha256(raw_capsule.encode("utf-8")).hexdigest()
