@@ -1,6 +1,6 @@
 # EGM-R2｜Goldfish 独立设计审查适配规格（草案）
 
-> 日期：2026-10-27（北京时间）｜状态：DESIGN_ONLY + GATE_A_PARTIAL_PASS + GATE_B1_PASS + GATE_B2_SCOPED_PASS
+> 日期：2026-10-27（北京时间）｜状态：DESIGN_ONLY + GATE_A_PARTIAL_PASS + GATE_B1_PASS + GATE_B2_SCOPED_PASS + GATE_B3_PILOT_COMPLETED
 > 仓库：conanxin/agent-loop｜设计目标：在现有 CX-PAN Hub 之上增加可选的、证据优先的独立设计审查流程。
 > 来源研究： https://app.notion.com/p/40634a28189a81a4a14dc301f54e4af9
 > 注意：CX-PAN 既有 P10 是网页客户端真实安装/授权阶段；EGM 不占用这个编号。
@@ -112,14 +112,17 @@ output:
 - [x] 各主机私有目录保存任务与 SQLite 回执，不在 Git/Notion 复制随机词或凭据。
 - [ ] 尚未穷尽 Provider 侧隐藏上下文、全部扩展及外部记忆来源；不能宣称完全的零泄漏。
 
-**Gate B3：实际质量与成本比较（未执行）**
-- [ ] 至少三份不同复杂度的设计规格，普通 Review 与独立 Goldfish 使用可比较的 rubric、模型和输入范围。
-- [ ] 人工复核各发现的真阳性、误报及引用是否语义支持；记录真实耗时、可获得的 token 与计费来源。
-- [ ] 只有收益可证实后，才决定是否添加 CX-PAN 内部 Goldfish target，外部 P9 MCP 权限不随之扩展。
+**Gate B3：质量对照小样本（2026-10-27 P I L O T 完成，推广价值未证实）**
+- [x] 三份源自真实文档的冻结测试副本，各加入两处登记冲突；同一个 MiniMax 模型做普通审查与 EGM 风格审查配对，未向模型提供答案文件。
+- [x] 第一轮长输出双并发 0/6 正常交付；SQLite 恢复的两份普通审查不得误报为 CLI 完成，另有模型输出格式失败。
+- [x] 第二轮缩短 JSON 并串行后 6/6 正常交付、零工具调用；两种审查各找出 6/6 种子冲突，助手按证据人工复核 12 个 TP、无已确认 FP。
+- [x] 记录时间与模型实际 Token：普通 85.443 秒 / 12012 tokens；Goldfish 104.076 秒 / 12924 tokens，未观察到增量检出率优势。
+- [ ] 真实未经植入缺陷的困难样本、不同模型重复、独立人类盲评与供应商真实费用仍未验收。
+- [ ] 收益证据不足时不把 Goldfish 变为所有任务默认，更不向 P9 MCP 开放新的能力。
 
 如 Gate A 部分失败，不自动大范围修改 Hub 或 Worker。先记录实际失败原因，按最小差异修复。
 
-Gate B1 证据：docs/designs/egm-goldfish-gate-b-20261027.md。Gate B2 证据：docs/designs/egm-goldfish-gate-b2-20261027.md。两者不是 Google 官方 EGM 插件集成证明，仍须在真实规格对照实验中核验审查价值。
+Gate B1 证据：docs/designs/egm-goldfish-gate-b-20261027.md。Gate B2 证据：docs/designs/egm-goldfish-gate-b2-20261027.md。Gate B3 受控对照数据：docs/designs/egm-goldfish-gate-b3-20261027.md。两者不是 Google 官方 EGM 插件集成证明，仍须在真实规格对照实验中核验审查价值。
 
 ## 8. 研究更新
 

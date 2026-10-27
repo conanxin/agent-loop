@@ -1,0 +1,119 @@
+{
+  "schema": "egm.b3.assistant_adjudication/1",
+  "date": "2026-10-27",
+  "assessor": "ChatGPT assistant; non-blinded and not an independent human rater",
+  "evaluation_scope": "Only 6 pre-seeded contradictions in 3 source-derived frozen documents; no claim about other real-world defects",
+  "evidence_standard": "Issue must articulate contradiction and cite both seeded and conflicting source clauses, directly or via line/evidence.",
+  "model_family": "minimax/MiniMax-M3.1-Flash",
+  "cases": [
+    {
+      "case": "state-transitions",
+      "baseline": [
+        {
+          "index": 0,
+          "seed": "ST-2",
+          "verdict": "TP",
+          "reason": "REPAIR_COMMAND planning vs DONE contradiction, source L37 vs seeded L52"
+        },
+        {
+          "index": 1,
+          "seed": "ST-1",
+          "verdict": "TP",
+          "reason": "Unauthorized COMMAND_READY direct jump to JUDGING bypasses report sequence, seeded L51 vs table L24"
+        }
+      ],
+      "goldfish": [
+        {
+          "index": 0,
+          "seed": "ST-2",
+          "verdict": "TP",
+          "reason": "REPAIR_COMMAND mapping planning vs DONE, L37/L52"
+        },
+        {
+          "index": 1,
+          "seed": "ST-1",
+          "verdict": "TP",
+          "reason": "Direct jump bypasses canonical report, L51/L24"
+        }
+      ]
+    },
+    {
+      "case": "schema-validation",
+      "baseline": [
+        {
+          "index": 0,
+          "seed": "SC-1",
+          "verdict": "TP",
+          "reason": "DONE may omit required approval field contradicts six mandatory fields, L21 vs L106"
+        },
+        {
+          "index": 1,
+          "seed": "SC-2",
+          "verdict": "TP",
+          "reason": "Relative report_path contradicts absolute rule, L73 vs L107"
+        }
+      ],
+      "goldfish": [
+        {
+          "index": 0,
+          "seed": "SC-1",
+          "verdict": "TP",
+          "reason": "Field must be present even for DONE, L106 vs L21"
+        },
+        {
+          "index": 1,
+          "seed": "SC-2",
+          "verdict": "TP",
+          "reason": "Relative report_path conflicts with validation absolute, L107 vs L73"
+        }
+      ]
+    },
+    {
+      "case": "egm-integration",
+      "baseline": [
+        {
+          "index": 0,
+          "seed": "EG-1",
+          "verdict": "TP",
+          "reason": "First Goldfish inheriting prior agent history undermines independent input, L87 vs L16/L64-L65"
+        },
+        {
+          "index": 1,
+          "seed": "EG-2",
+          "verdict": "TP",
+          "reason": "Passing review without source_sha256 breaks provenance rules, L88 vs L55/L74/L80"
+        }
+      ],
+      "goldfish": [
+        {
+          "index": 0,
+          "seed": "EG-1",
+          "verdict": "TP",
+          "reason": "Inheriting prior report contaminates independent initial review, L87 vs L16"
+        },
+        {
+          "index": 1,
+          "seed": "EG-2",
+          "verdict": "TP",
+          "reason": "Marking SHA-less review verified conflicts with evidence requirement, L88 vs L80"
+        }
+      ]
+    }
+  ],
+  "adjudication_summary": {
+    "baseline_tp": 6,
+    "goldfish_tp": 6,
+    "baseline_reported_findings": 6,
+    "goldfish_reported_findings": 6,
+    "baseline_confirmed_fp": 0,
+    "goldfish_confirmed_fp": 0,
+    "seeded_issue_recall_per_arm": 1,
+    "not_assessed": [
+      "unseeded real issues",
+      "model generalization",
+      "independent blinded human rating",
+      "repeated stochastic trials",
+      "multistage Google EGM implementation"
+    ]
+  }
+}

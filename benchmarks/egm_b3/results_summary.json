@@ -1,0 +1,159 @@
+{
+  "schema": "egm.b3.results/1",
+  "study_type": "source-derived controlled seeded pilot",
+  "benchmark_date": "2026-10-27",
+  "comparison": "Same MiniMax M3.1 Flash, same case fixture, fresh isolated context, short JSON; prompt strategy differs",
+  "run_order": "state baseline→Goldfish, schemas Goldfish→baseline, EGM baseline→Goldfish",
+  "initial_long_parallel_condition": {
+    "planned_runs": 6,
+    "cli_successful_deliveries": 0,
+    "trace_json_recoveries_not_delivered": 2,
+    "one_other_model_text_unparseable": 1,
+    "remaining_no_completed_model_text": 3,
+    "warning": "not a quality comparison; multiple execution variables differ"
+  },
+  "lean_matched_condition": {
+    "planned_runs": 6,
+    "cli_successful_deliveries": 6,
+    "seeded_total": 6,
+    "cases": [
+      {
+        "case": "state-transitions",
+        "source_file": "docs/STATE_MACHINE.md",
+        "fixture_sha256": "49c323031497ed238f08c5bfa84407f47677b073ecc1d9d6025ad21153e77c31",
+        "seeded_fault_count": 2,
+        "baseline": {
+          "status": "COMPLETED",
+          "elapsed_s": 34.626,
+          "total_tokens": 3701,
+          "input_tokens": 2700,
+          "output_tokens": 873,
+          "tool_calls": 0,
+          "model_visible_tool_schemas": 0,
+          "reported_findings": 2,
+          "adjudicated_tp": 2,
+          "adjudicated_fp": 0,
+          "session_id": "654ebb9d-74c3-48f8-bb8b-40a8eb6a30e8"
+        },
+        "goldfish": {
+          "status": "COMPLETED",
+          "elapsed_s": 33.106,
+          "total_tokens": 4933,
+          "input_tokens": 1811,
+          "output_tokens": 2098,
+          "tool_calls": 0,
+          "model_visible_tool_schemas": 0,
+          "reported_findings": 2,
+          "adjudicated_tp": 2,
+          "adjudicated_fp": 0,
+          "session_id": "d980da3e-3fc2-4399-8e48-54d53062068b"
+        }
+      },
+      {
+        "case": "schema-validation",
+        "source_file": "docs/SCHEMAS.md",
+        "fixture_sha256": "c9452184cec3b555897229e04154e0be927e67da84ab54c9752a962c88c57e27",
+        "seeded_fault_count": 2,
+        "baseline": {
+          "status": "COMPLETED",
+          "elapsed_s": 23.043,
+          "total_tokens": 3691,
+          "input_tokens": 2264,
+          "output_tokens": 403,
+          "tool_calls": 0,
+          "model_visible_tool_schemas": 0,
+          "reported_findings": 2,
+          "adjudicated_tp": 2,
+          "adjudicated_fp": 0,
+          "session_id": "0ab30042-6f8c-4439-868f-025c199026a2"
+        },
+        "goldfish": {
+          "status": "COMPLETED",
+          "elapsed_s": 25.144,
+          "total_tokens": 3777,
+          "input_tokens": 3120,
+          "output_tokens": 471,
+          "tool_calls": 0,
+          "model_visible_tool_schemas": 0,
+          "reported_findings": 2,
+          "adjudicated_tp": 2,
+          "adjudicated_fp": 0,
+          "session_id": "caf53bae-6c91-4adb-9cfb-7302770aa3ac"
+        }
+      },
+      {
+        "case": "egm-integration",
+        "source_file": "docs/designs/egm-goldfish-adapter.md",
+        "fixture_sha256": "a35263a1ccf38da7018c3ee8da17bcaf44db734f56f84d77cb354fab2bf64ed2",
+        "seeded_fault_count": 2,
+        "baseline": {
+          "status": "COMPLETED",
+          "elapsed_s": 27.774,
+          "total_tokens": 4620,
+          "input_tokens": 2664,
+          "output_tokens": 932,
+          "tool_calls": 0,
+          "model_visible_tool_schemas": 0,
+          "reported_findings": 2,
+          "adjudicated_tp": 2,
+          "adjudicated_fp": 0,
+          "session_id": "b22f56ec-c9a2-43fe-9e33-9364b9c85608"
+        },
+        "goldfish": {
+          "status": "COMPLETED",
+          "elapsed_s": 45.826,
+          "total_tokens": 4214,
+          "input_tokens": 3576,
+          "output_tokens": 510,
+          "tool_calls": 0,
+          "model_visible_tool_schemas": 0,
+          "reported_findings": 2,
+          "adjudicated_tp": 2,
+          "adjudicated_fp": 0,
+          "session_id": "42d970c6-ceda-4f1d-abad-35a895462966"
+        }
+      }
+    ],
+    "aggregate": {
+      "baseline": {
+        "completed_runs": 3,
+        "seeded_true_positives": 6,
+        "confirmed_false_positives": 0,
+        "total_reported_findings": 6,
+        "elapsed_s": 85.443,
+        "median_elapsed_s": 27.774,
+        "total_tokens": 12012,
+        "input_tokens": 7628,
+        "output_tokens": 2208,
+        "tool_calls": 0
+      },
+      "goldfish": {
+        "completed_runs": 3,
+        "seeded_true_positives": 6,
+        "confirmed_false_positives": 0,
+        "total_reported_findings": 6,
+        "elapsed_s": 104.076,
+        "median_elapsed_s": 33.106,
+        "total_tokens": 12924,
+        "input_tokens": 8507,
+        "output_tokens": 3079,
+        "tool_calls": 0
+      }
+    },
+    "goldfish_incremental_seeded_hits": 0,
+    "goldfish_extra_seconds": 18.633,
+    "goldfish_extra_elapsed_percent": 21.81,
+    "goldfish_extra_tokens": 912,
+    "goldfish_extra_tokens_percent": 7.59
+  },
+  "adjudication": "ChatGPT assistant evidence-based review, not independent human blind rating",
+  "actual_billing_cost_usd": null,
+  "model_quality_conclusion": "No observed seed-recall advantage in this easy three-case, one-model single-run experiment",
+  "limitations": [
+    "Planted contradictions in excerpts, near end of text",
+    "One model per arm, no repeated-run variance or independent human blind scoring",
+    "One-call Goldfish prompting is not full Google EGM multi-stage flow",
+    "Does not quantify benefit for complex real unmodified production specs",
+    "First condition changed both concurrency and output length, so reliability difference is not causally isolated"
+  ]
+}

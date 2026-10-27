@@ -1,0 +1,74 @@
+{
+  "schema": "egm.b3.groundtruth/1",
+  "description": "Manual seeded contradictions in source-derived benchmark documents",
+  "blind_scoring": "Reviewer receives only fixture file, not this key",
+  "source_git_commit": "08d7478ae11debd54c79474f81608336aede45aa",
+  "cases": [
+    {
+      "id": "state-transitions",
+      "source_file": "docs/STATE_MACHINE.md",
+      "source_sha256": "26b57562cc1ddefab5027c07859d70bad6988d1475937263402022ef9425c339",
+      "fixture_sha256": "49c323031497ed238f08c5bfa84407f47677b073ecc1d9d6025ad21153e77c31",
+      "fixture_line_count": 53,
+      "seeded_faults": [
+        {
+          "id": "ST-1",
+          "line": 51,
+          "exact_seeded_claim": "A reviewer may move directly from COMMAND_READY to OPENCLAW_JUDGING with relay --judge-prompt --mark-judging without a dispatch or report.",
+          "why_wrong": "The state transitions require COMMAND_READY -> DISPATCHED_TO_HERMES -> HERMES_REPORT_WRITTEN -> OPENCLAW_JUDGING and human confirmation."
+        },
+        {
+          "id": "ST-2",
+          "line": 52,
+          "exact_seeded_claim": "Decision REPAIR_COMMAND always enters DONE because repairing a command is defined as a terminal decision.",
+          "why_wrong": "The Decision → State Mapping explicitly maps REPAIR_COMMAND to OPENCLAW_PLANNING, not DONE."
+        }
+      ],
+      "valid_decoy": "Decision PARTIAL enters PARTIAL and requires a human to decide the follow-up."
+    },
+    {
+      "id": "schema-validation",
+      "source_file": "docs/SCHEMAS.md",
+      "source_sha256": "aa940df9f0395e7be81c9b32d362f070d6a79a0ed646356a1b41a0699624195f",
+      "fixture_sha256": "c9452184cec3b555897229e04154e0be927e67da84ab54c9752a962c88c57e27",
+      "fixture_line_count": 108,
+      "seeded_faults": [
+        {
+          "id": "SC-1",
+          "line": 106,
+          "exact_seeded_claim": "requires_human_approval is optional on DONE decisions and may be omitted from the serialized block.",
+          "why_wrong": "The BEGIN_OPENCLAW_DECISION block requires requires_human_approval and validation says all 6 fields are mandatory."
+        },
+        {
+          "id": "SC-2",
+          "line": 107,
+          "exact_seeded_claim": "report_path can be a relative path such as hermes-reports/latest.md; the absolute-path condition is advisory.",
+          "why_wrong": "BEGIN_HERMES_REPORT validation explicitly requires report_path to be absolute."
+        }
+      ],
+      "valid_decoy": "The decision enum supports NEXT_COMMAND, and the file naming table gives a separate report path pattern."
+    },
+    {
+      "id": "egm-integration",
+      "source_file": "docs/designs/egm-goldfish-adapter.md",
+      "source_sha256": "898dd606557cd6906cffbd0c179acc5f06662c31bec1b41162138bb37feeca2d",
+      "fixture_sha256": "a35263a1ccf38da7018c3ee8da17bcaf44db734f56f84d77cb354fab2bf64ed2",
+      "fixture_line_count": 89,
+      "seeded_faults": [
+        {
+          "id": "EG-1",
+          "line": 87,
+          "exact_seeded_claim": "首轮 Goldfish 应继承 Elephant 上次完整审查报告与项目对话历史，方便复用前一个 Agent 的判断。",
+          "why_wrong": "The design calls for independent review, no inherited parent context, and Synthesizer reading independent reviews only after both complete."
+        },
+        {
+          "id": "EG-2",
+          "line": 88,
+          "exact_seeded_claim": "如果审查结果无法关联 source_sha256，也应默认标记为已完成原文验证，而不需要追回源文件。",
+          "why_wrong": "The design demands immutable source_sha256/capsule provenance and explicitly differentiates structural citations from semantic truth."
+        }
+      ],
+      "valid_decoy": "未来准备创建但目前不存在的文件，不能仅因为不存在就作为当前代码已实现缺陷。"
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "schema": "egm.b3.manifest/1",
+  "source_git_commit": "08d7478ae11debd54c79474f81608336aede45aa",
+  "cases": [
+    {
+      "id": "state-transitions",
+      "fixture": "benchmarks/egm_b3/fixtures/state-transitions.md",
+      "sha256": "49c323031497ed238f08c5bfa84407f47677b073ecc1d9d6025ad21153e77c31",
+      "line_count": 53
+    },
+    {
+      "id": "schema-validation",
+      "fixture": "benchmarks/egm_b3/fixtures/schema-validation.md",
+      "sha256": "c9452184cec3b555897229e04154e0be927e67da84ab54c9752a962c88c57e27",
+      "line_count": 108
+    },
+    {
+      "id": "egm-integration",
+      "fixture": "benchmarks/egm_b3/fixtures/egm-integration.md",
+      "sha256": "a35263a1ccf38da7018c3ee8da17bcaf44db734f56f84d77cb354fab2bf64ed2",
+      "line_count": 89
+    }
+  ]
+}
