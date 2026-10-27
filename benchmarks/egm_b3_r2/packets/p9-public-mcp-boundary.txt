@@ -1,0 +1,308 @@
+==== FILE=bridge/mcp_gateway.py LINES=102-147 ORIGINAL_SOURCE_SHA256=6e8ac2c7cef7c13d238a5255f6e4a223f5f280b36d1ef34954d73b36a6532f43 ====
+[bridge/mcp_gateway.py:L102]     task = record.get("task")
+[bridge/mcp_gateway.py:L103]     if not isinstance(task, dict) or (
+[bridge/mcp_gateway.py:L104]         task.get("project_id") != "CX-PAN" or
+[bridge/mcp_gateway.py:L105]         task.get("requester") not in MCP_ACTORS or
+[bridge/mcp_gateway.py:L106]         task.get("target") not in SAFE_TARGETS
+[bridge/mcp_gateway.py:L107]     ):
+[bridge/mcp_gateway.py:L108]         raise ValueError("task not found")
+[bridge/mcp_gateway.py:L109]     return task
+[bridge/mcp_gateway.py:L110] 
+[bridge/mcp_gateway.py:L111] 
+[bridge/mcp_gateway.py:L112] def quota_slot(principal, key):
+[bridge/mcp_gateway.py:L113]     """Atomic per-principal/day quota; duplicate calls share the same slot."""
+[bridge/mcp_gateway.py:L114]     QUOTA_DB.parent.mkdir(parents=True, exist_ok=True)
+[bridge/mcp_gateway.py:L115]     conn = sqlite3.connect(QUOTA_DB, timeout=5)
+[bridge/mcp_gateway.py:L116]     try:
+[bridge/mcp_gateway.py:L117]         conn.execute("PRAGMA busy_timeout=5000")
+[bridge/mcp_gateway.py:L118]         conn.execute("""
+[bridge/mcp_gateway.py:L119]         CREATE TABLE IF NOT EXISTS quotas (
+[bridge/mcp_gateway.py:L120]           client TEXT NOT NULL,
+[bridge/mcp_gateway.py:L121]           day TEXT NOT NULL,
+[bridge/mcp_gateway.py:L122]           idem_key TEXT NOT NULL,
+[bridge/mcp_gateway.py:L123]           PRIMARY KEY (client, day, idem_key)
+[bridge/mcp_gateway.py:L124]         )
+[bridge/mcp_gateway.py:L125]         """)
+[bridge/mcp_gateway.py:L126]         day = datetime.now(timezone.utc).date().isoformat()
+[bridge/mcp_gateway.py:L127]         conn.execute("BEGIN IMMEDIATE")
+[bridge/mcp_gateway.py:L128]         record = conn.execute(
+[bridge/mcp_gateway.py:L129]             "SELECT 1 FROM quotas WHERE client=? AND day=? AND idem_key=?",
+[bridge/mcp_gateway.py:L130]             (principal, day, key)).fetchone()
+[bridge/mcp_gateway.py:L131]         if record:
+[bridge/mcp_gateway.py:L132]             conn.commit()
+[bridge/mcp_gateway.py:L133]             return
+[bridge/mcp_gateway.py:L134]         count = conn.execute(
+[bridge/mcp_gateway.py:L135]             "SELECT count(*) FROM quotas WHERE client=? AND day=?",
+[bridge/mcp_gateway.py:L136]             (principal, day)).fetchone()[0]
+[bridge/mcp_gateway.py:L137]         if count >= MAX_DAILY_UNIQUE:
+[bridge/mcp_gateway.py:L138]             conn.rollback()
+[bridge/mcp_gateway.py:L139]             raise ValueError("daily new task quota reached for this client")
+[bridge/mcp_gateway.py:L140]         conn.execute(
+[bridge/mcp_gateway.py:L141]             "INSERT INTO quotas(client,day,idem_key) VALUES(?,?,?)",
+[bridge/mcp_gateway.py:L142]             (principal, day, key))
+[bridge/mcp_gateway.py:L143]         conn.commit()
+[bridge/mcp_gateway.py:L144]     finally:
+[bridge/mcp_gateway.py:L145]         conn.close()
+[bridge/mcp_gateway.py:L146] 
+[bridge/mcp_gateway.py:L147] 
+==== END_EXCERPT ====
+==== FILE=bridge/mcp_gateway.py LINES=148-250 ORIGINAL_SOURCE_SHA256=6e8ac2c7cef7c13d238a5255f6e4a223f5f280b36d1ef34954d73b36a6532f43 ====
+[bridge/mcp_gateway.py:L148] def tools_for(principal):
+[bridge/mcp_gateway.py:L149]     security = TransportSecuritySettings(
+[bridge/mcp_gateway.py:L150]         enable_dns_rebinding_protection=True,
+[bridge/mcp_gateway.py:L151]         allowed_hosts=[
+[bridge/mcp_gateway.py:L152]             "127.0.0.1:*", "localhost:*", "www.conanxin.com",
+[bridge/mcp_gateway.py:L153]             "www.conanxin.com:443",
+[bridge/mcp_gateway.py:L154]         ],
+[bridge/mcp_gateway.py:L155]         allowed_origins=sorted(ALLOWED_ORIGINS),
+[bridge/mcp_gateway.py:L156]     )
+[bridge/mcp_gateway.py:L157]     server = FastMCP(
+[bridge/mcp_gateway.py:L158]         f"CX-PAN {principal} restricted connector",
+[bridge/mcp_gateway.py:L159]         instructions=(
+[bridge/mcp_gateway.py:L160]             "Safe user-controlled personal AI task status. Only read P7 "
+[bridge/mcp_gateway.py:L161]             "tasks created by chatgpt or claude restricted MCP clients. "
+[bridge/mcp_gateway.py:L162]             "Task submission may only create echo or allowlisted public "
+[bridge/mcp_gateway.py:L163]             "source-capture tasks, never paid model calls or shell commands."
+[bridge/mcp_gateway.py:L164]         ),
+[bridge/mcp_gateway.py:L165]         stateless_http=True, json_response=True,
+[bridge/mcp_gateway.py:L166]         transport_security=security,
+[bridge/mcp_gateway.py:L167]     )
+[bridge/mcp_gateway.py:L168] 
+[bridge/mcp_gateway.py:L169]     @server.tool(
+[bridge/mcp_gateway.py:L170]         name="agents_list",
+[bridge/mcp_gateway.py:L171]         description="List only the two SAFE submit capabilities of CX-PAN.",
+[bridge/mcp_gateway.py:L172]         annotations=ToolAnnotations(readOnlyHint=True,destructiveHint=False,
+[bridge/mcp_gateway.py:L173]                                     openWorldHint=False),
+[bridge/mcp_gateway.py:L174]     )
+[bridge/mcp_gateway.py:L175]     def agents_list() -> dict:
+[bridge/mcp_gateway.py:L176]         return {
+[bridge/mcp_gateway.py:L177]             "principal": principal,
+[bridge/mcp_gateway.py:L178]             "safe_targets": [
+[bridge/mcp_gateway.py:L179]                 {"id": "echo.local", "capability": "echo", "cost": "no model"},
+[bridge/mcp_gateway.py:L180]                 {"id": "repo.evidence.local", "capability": "source.capture",
+[bridge/mcp_gateway.py:L181]                  "allowed_sources": sorted(SAFE_SOURCE_FILES), "cost": "no model"},
+[bridge/mcp_gateway.py:L182]             ],
+[bridge/mcp_gateway.py:L183]             "can_submit_paid_model_tasks": False,
+[bridge/mcp_gateway.py:L184]             "daily_new_task_limit": MAX_DAILY_UNIQUE,
+[bridge/mcp_gateway.py:L185]         }
+[bridge/mcp_gateway.py:L186] 
+[bridge/mcp_gateway.py:L187]     @server.tool(
+[bridge/mcp_gateway.py:L188]         name="task_get",
+[bridge/mcp_gateway.py:L189]         description="Inspect an authorized P7 task by its task_id.",
+[bridge/mcp_gateway.py:L190]         annotations=ToolAnnotations(readOnlyHint=True,destructiveHint=False,
+[bridge/mcp_gateway.py:L191]                                     openWorldHint=False),
+[bridge/mcp_gateway.py:L192]     )
+[bridge/mcp_gateway.py:L193]     def task_get(task_id: str) -> dict:
+[bridge/mcp_gateway.py:L194]         if not UUID.fullmatch(task_id):
+[bridge/mcp_gateway.py:L195]             raise ValueError("invalid task_id")
+[bridge/mcp_gateway.py:L196]         result = mcp_rpc("GET", f"/v1/tasks/{task_id}")
+[bridge/mcp_gateway.py:L197]         t = check_visible(result)
+[bridge/mcp_gateway.py:L198]         return {
+[bridge/mcp_gateway.py:L199]             "task_id": t["task_id"], "status": t["status"],
+[bridge/mcp_gateway.py:L200]             "execution_health": t.get("execution_health"),
+[bridge/mcp_gateway.py:L201]             "target": t["target"], "requester": t["requester"],
+[bridge/mcp_gateway.py:L202]             "run_id": t.get("run_id"),
+[bridge/mcp_gateway.py:L203]         }
+[bridge/mcp_gateway.py:L204] 
+[bridge/mcp_gateway.py:L205]     @server.tool(
+[bridge/mcp_gateway.py:L206]         name="task_result",
+[bridge/mcp_gateway.py:L207]         description="Read the stored result of a completed authorized P7 task.",
+[bridge/mcp_gateway.py:L208]         annotations=ToolAnnotations(readOnlyHint=True,destructiveHint=False,
+[bridge/mcp_gateway.py:L209]                                     openWorldHint=False),
+[bridge/mcp_gateway.py:L210]     )
+[bridge/mcp_gateway.py:L211]     def task_result(task_id: str) -> dict:
+[bridge/mcp_gateway.py:L212]         if not UUID.fullmatch(task_id):
+[bridge/mcp_gateway.py:L213]             raise ValueError("invalid task_id")
+[bridge/mcp_gateway.py:L214]         result = mcp_rpc("GET", f"/v1/tasks/{task_id}/result")
+[bridge/mcp_gateway.py:L215]         t = check_visible(result)
+[bridge/mcp_gateway.py:L216]         data = result.get("result_text")
+[bridge/mcp_gateway.py:L217]         return {
+[bridge/mcp_gateway.py:L218]             "task_id": t["task_id"], "status": t["status"],
+[bridge/mcp_gateway.py:L219]             "target": t["target"], "run_id": t.get("run_id"),
+[bridge/mcp_gateway.py:L220]             # Only the safe echo/public source capture target can reach here.
+[bridge/mcp_gateway.py:L221]             "result_text": data[:19500] if isinstance(data, str) else None,
+[bridge/mcp_gateway.py:L222]             "error": (result.get("error_text") or "")[:450],
+[bridge/mcp_gateway.py:L223]         }
+[bridge/mcp_gateway.py:L224] 
+[bridge/mcp_gateway.py:L225]     @server.tool(
+[bridge/mcp_gateway.py:L226]         name="task_submit_safe",
+[bridge/mcp_gateway.py:L227]         description=(
+[bridge/mcp_gateway.py:L228]             "Submit only a bounded echo or a whitelisted PUBLIC agent-loop "
+[bridge/mcp_gateway.py:L229]             "document capture. Requires a caller-chosen stable idempotency_key. "
+[bridge/mcp_gateway.py:L230]             "No paid model invocation, file edits, arbitrary paths or shell."
+[bridge/mcp_gateway.py:L231]         ),
+[bridge/mcp_gateway.py:L232]         annotations=ToolAnnotations(readOnlyHint=False,destructiveHint=False,
+[bridge/mcp_gateway.py:L233]                                     idempotentHint=True,openWorldHint=False),
+[bridge/mcp_gateway.py:L234]     )
+[bridge/mcp_gateway.py:L235]     def task_submit_safe(
+[bridge/mcp_gateway.py:L236]         target: Literal["echo.local", "repo.evidence.local"],
+[bridge/mcp_gateway.py:L237]         goal: str,
+[bridge/mcp_gateway.py:L238]         idempotency_key: str,
+[bridge/mcp_gateway.py:L239]     ) -> dict:
+[bridge/mcp_gateway.py:L240]         if target not in SAFE_TARGETS:
+[bridge/mcp_gateway.py:L241]             raise ValueError("target not in safe capability allowlist")
+[bridge/mcp_gateway.py:L242]         if not IDENTIFIER.fullmatch(idempotency_key) or len(idempotency_key) > 100:
+[bridge/mcp_gateway.py:L243]             raise ValueError("invalid idempotency_key: use 8..100 ASCII letters/numbers/_/-")
+[bridge/mcp_gateway.py:L244]         if not isinstance(goal, str) or not (4 <= len(goal) <= 420):
+[bridge/mcp_gateway.py:L245]             raise ValueError("safe task goal must be 4..420 characters")
+[bridge/mcp_gateway.py:L246]         if target == "repo.evidence.local" and goal not in SAFE_SOURCE_FILES:
+[bridge/mcp_gateway.py:L247]             raise ValueError("capture is limited to three allowlisted public files")
+[bridge/mcp_gateway.py:L248]         quota_slot(principal, idempotency_key)
+[bridge/mcp_gateway.py:L249]         response = mcp_rpc("POST", "/v1/tasks", {
+[bridge/mcp_gateway.py:L250]             "idempotency_key": "p7-" + principal + "-" + idempotency_key,
+==== END_EXCERPT ====
+==== FILE=bridge/mcp_gateway.py LINES=265-324 ORIGINAL_SOURCE_SHA256=6e8ac2c7cef7c13d238a5255f6e4a223f5f280b36d1ef34954d73b36a6532f43 ====
+[bridge/mcp_gateway.py:L265] class BearerGate:
+[bridge/mcp_gateway.py:L266]     """Pure ASGI middleware (streaming-safe) in front of both MCP apps."""
+[bridge/mcp_gateway.py:L267] 
+[bridge/mcp_gateway.py:L268]     def __init__(self, app):
+[bridge/mcp_gateway.py:L269]         self.app = app
+[bridge/mcp_gateway.py:L270] 
+[bridge/mcp_gateway.py:L271]     @staticmethod
+[bridge/mcp_gateway.py:L272]     def scope_client(path):
+[bridge/mcp_gateway.py:L273]         parts = path.split("/")
+[bridge/mcp_gateway.py:L274]         if len(parts) >= 3 and parts[1] in EXTERNAL_PATHS:
+[bridge/mcp_gateway.py:L275]             return parts[1]
+[bridge/mcp_gateway.py:L276]         return None
+[bridge/mcp_gateway.py:L277] 
+[bridge/mcp_gateway.py:L278]     async def __call__(self, scope, receive, send):
+[bridge/mcp_gateway.py:L279]         if scope["type"] != "http":
+[bridge/mcp_gateway.py:L280]             await self.app(scope, receive, send)
+[bridge/mcp_gateway.py:L281]             return
+[bridge/mcp_gateway.py:L282]         path = scope.get("path") or ""
+[bridge/mcp_gateway.py:L283]         if path == "/healthz":
+[bridge/mcp_gateway.py:L284]             await self.app(scope, receive, send)
+[bridge/mcp_gateway.py:L285]             return
+[bridge/mcp_gateway.py:L286]         name = self.scope_client(path)
+[bridge/mcp_gateway.py:L287]         headers = dict(scope.get("headers", []))
+[bridge/mcp_gateway.py:L288]         origin = headers.get(b"origin", b"").decode("utf-8", errors="replace")
+[bridge/mcp_gateway.py:L289]         if origin and origin not in ALLOWED_ORIGINS:
+[bridge/mcp_gateway.py:L290]             response = JSONResponse({"error": "forbidden origin"}, status_code=403)
+[bridge/mcp_gateway.py:L291]             await response(scope, receive, send)
+[bridge/mcp_gateway.py:L292]             return
+[bridge/mcp_gateway.py:L293]         if name is None:
+[bridge/mcp_gateway.py:L294]             response = JSONResponse({"error": "not found"}, status_code=404)
+[bridge/mcp_gateway.py:L295]             await response(scope, receive, send)
+[bridge/mcp_gateway.py:L296]             return
+[bridge/mcp_gateway.py:L297]         auth = headers.get(b"authorization", b"").decode("utf-8", errors="replace")
+[bridge/mcp_gateway.py:L298]         expected_digest = load_client_hashes()[name]
+[bridge/mcp_gateway.py:L299]         supplied = auth.removeprefix("Bearer ")
+[bridge/mcp_gateway.py:L300]         valid = (
+[bridge/mcp_gateway.py:L301]             auth.startswith("Bearer ") and len(supplied) <= 256 and
+[bridge/mcp_gateway.py:L302]             hmac.compare_digest(
+[bridge/mcp_gateway.py:L303]                 hashlib.sha256(supplied.encode("utf-8")).hexdigest(),
+[bridge/mcp_gateway.py:L304]                 expected_digest,
+[bridge/mcp_gateway.py:L305]             )
+[bridge/mcp_gateway.py:L306]         )
+[bridge/mcp_gateway.py:L307]         # ChatGPT's native plugin cannot supply an arbitrary API key. P8
+[bridge/mcp_gateway.py:L308]         # additionally accepts a short-lived, scope/audience-checked OAuth
+[bridge/mcp_gateway.py:L309]         # access token. Claude continues to use its separate P7 credential.
+[bridge/mcp_gateway.py:L310]         if name == "chatgpt" and not valid and auth.startswith("Bearer "):
+[bridge/mcp_gateway.py:L311]             valid = verify_oauth_access(
+[bridge/mcp_gateway.py:L312]                 supplied, resource=OAUTH_RESOURCE, scope=OAUTH_SCOPE
+[bridge/mcp_gateway.py:L313]             )
+[bridge/mcp_gateway.py:L314]         if not valid:
+[bridge/mcp_gateway.py:L315]             metadata = (
+[bridge/mcp_gateway.py:L316]                 'Bearer resource_metadata="https://www.conanxin.com/'
+[bridge/mcp_gateway.py:L317]                 '.well-known/oauth-protected-resource/cxpan/chatgpt/mcp", '
+[bridge/mcp_gateway.py:L318]                 'scope="tasks:safe", error="invalid_token"'
+[bridge/mcp_gateway.py:L319]                 if name == "chatgpt" else 'Bearer realm="CX-PAN restricted MCP"'
+[bridge/mcp_gateway.py:L320]             )
+[bridge/mcp_gateway.py:L321]             response = JSONResponse({"error": "unauthorized"}, status_code=401,
+[bridge/mcp_gateway.py:L322]                 headers={"WWW-Authenticate": metadata})
+[bridge/mcp_gateway.py:L323]             await response(scope, receive, send)
+[bridge/mcp_gateway.py:L324]             return
+==== END_EXCERPT ====
+==== FILE=bridge/oauth_store.py LINES=93-114 ORIGINAL_SOURCE_SHA256=6dba6b6608740acb98e8af697a098bc8e291e97c01977c7efbbe408c48ce1649 ====
+[bridge/oauth_store.py:L93] def verify_access(token, resource=RESOURCE, scope=SCOPE):
+[bridge/oauth_store.py:L94]     """Fail closed. Never return the token or unfiltered database records."""
+[bridge/oauth_store.py:L95]     if not isinstance(token, str) or not (35 <= len(token) <= 256):
+[bridge/oauth_store.py:L96]         return False
+[bridge/oauth_store.py:L97]     con = db_connect()
+[bridge/oauth_store.py:L98]     if con is None:
+[bridge/oauth_store.py:L99]         return False
+[bridge/oauth_store.py:L100]     try:
+[bridge/oauth_store.py:L101]         row = con.execute("""
+[bridge/oauth_store.py:L102]             SELECT scopes_json, resource, expires_at, revoked, kind
+[bridge/oauth_store.py:L103]             FROM tokens WHERE token_digest=?
+[bridge/oauth_store.py:L104]         """, (digest(token),)).fetchone()
+[bridge/oauth_store.py:L105]         if not row or row["kind"] != "access" or row["revoked"]:
+[bridge/oauth_store.py:L106]             return False
+[bridge/oauth_store.py:L107]         if row["resource"] != resource or row["expires_at"] <= int(time.time()):
+[bridge/oauth_store.py:L108]             return False
+[bridge/oauth_store.py:L109]         import json
+[bridge/oauth_store.py:L110]         return scope in json.loads(row["scopes_json"])
+[bridge/oauth_store.py:L111]     except (sqlite3.DatabaseError, ValueError):
+[bridge/oauth_store.py:L112]         return False
+[bridge/oauth_store.py:L113]     finally:
+[bridge/oauth_store.py:L114]         con.close()
+==== END_EXCERPT ====
+==== FILE=bridge/oauth_server.py LINES=288-337 ORIGINAL_SOURCE_SHA256=6001fd314af3c35c84b0ced4cf5a9157e6f0b87eaafaa29f55544d242c2511b6 ====
+[bridge/oauth_server.py:L288]                 (digest(refresh_token.token),)
+[bridge/oauth_server.py:L289]             ).fetchone()
+[bridge/oauth_server.py:L290]             if not row or row["revoked"] or row["client_id"]!=client.client_id or (
+[bridge/oauth_server.py:L291]                 row["expires_at"]<=int(time.time()) or row["resource"]!=RESOURCE
+[bridge/oauth_server.py:L292]             ):
+[bridge/oauth_server.py:L293]                 con.rollback()
+[bridge/oauth_server.py:L294]                 raise TokenError(error="invalid_grant",
+[bridge/oauth_server.py:L295]                                  error_description="Refresh already rotated or expired")
+[bridge/oauth_server.py:L296]             existing=json.loads(row["scopes_json"])
+[bridge/oauth_server.py:L297]             if any(s not in existing for s in scopes) or not scopes:
+[bridge/oauth_server.py:L298]                 con.rollback()
+[bridge/oauth_server.py:L299]                 raise TokenError(error="invalid_scope",
+[bridge/oauth_server.py:L300]                                  error_description="Refresh scope escalation denied")
+[bridge/oauth_server.py:L301]             con.execute(
+[bridge/oauth_server.py:L302]                 "UPDATE tokens SET revoked=1 WHERE token_digest=?",
+[bridge/oauth_server.py:L303]                 (digest(refresh_token.token),)
+[bridge/oauth_server.py:L304]             )
+[bridge/oauth_server.py:L305]             result=_issue_pair(con,client.client_id,scopes,RESOURCE,row["family"])
+[bridge/oauth_server.py:L306]             con.commit()
+[bridge/oauth_server.py:L307]             return result
+[bridge/oauth_server.py:L308]         finally:
+[bridge/oauth_server.py:L309]             con.close()
+[bridge/oauth_server.py:L310] 
+[bridge/oauth_server.py:L311]     async def load_access_token(self, token):
+[bridge/oauth_server.py:L312]         con=db_connect()
+[bridge/oauth_server.py:L313]         if con is None:
+[bridge/oauth_server.py:L314]             return None
+[bridge/oauth_server.py:L315]         try:
+[bridge/oauth_server.py:L316]             row=con.execute(
+[bridge/oauth_server.py:L317]                 "SELECT * FROM tokens WHERE token_digest=? AND kind='access'",
+[bridge/oauth_server.py:L318]                 (digest(token),)
+[bridge/oauth_server.py:L319]             ).fetchone()
+[bridge/oauth_server.py:L320]             if not row or row["revoked"] or (
+[bridge/oauth_server.py:L321]                 row["expires_at"]<=int(time.time()) or row["resource"]!=RESOURCE
+[bridge/oauth_server.py:L322]             ):
+[bridge/oauth_server.py:L323]                 return None
+[bridge/oauth_server.py:L324]             return AccessToken(
+[bridge/oauth_server.py:L325]                 token=token, client_id=row["client_id"],
+[bridge/oauth_server.py:L326]                 scopes=json.loads(row["scopes_json"]),
+[bridge/oauth_server.py:L327]                 expires_at=row["expires_at"], resource=row["resource"]
+[bridge/oauth_server.py:L328]             )
+[bridge/oauth_server.py:L329]         finally:
+[bridge/oauth_server.py:L330]             con.close()
+[bridge/oauth_server.py:L331] 
+[bridge/oauth_server.py:L332]     async def revoke_token(self, token):
+[bridge/oauth_server.py:L333]         con=db_connect(create=True)
+[bridge/oauth_server.py:L334]         try:
+[bridge/oauth_server.py:L335]             row=con.execute(
+[bridge/oauth_server.py:L336]                 "SELECT family FROM tokens WHERE token_digest=?",
+[bridge/oauth_server.py:L337]                 (digest(token.token),)
+==== END_EXCERPT ====
+==== FILE=docs/CX_PAN_INTEGRATION.md LINES=4-18 ORIGINAL_SOURCE_SHA256=f5254c1792d69797511e5998cba15cb39e964d9938e79c41f93268dcf8748fdc ====
+[docs/CX_PAN_INTEGRATION.md:L4] ## 当前权威状态（2026-10-27 P9 更新）
+[docs/CX_PAN_INTEGRATION.md:L5] 
+[docs/CX_PAN_INTEGRATION.md:L6] - **私有 ChatGPT 插件已创建但未安装：** `CX-PAN v0.1.0`、scope USER、discoverability PRIVATE，入口 [打开插件](https://chatgpt.com/plugins/plugins_6ae016c0348881918f74bd2c023ab5fe)。通过官方插件包的 `mcp.json` 指向既有 `https://www.conanxin.com/cxpan/chatgpt/mcp`、OAuth DCR 与唯一 `tasks:safe`；不附带任何密钥。
+[docs/CX_PAN_INTEGRATION.md:L7] - **OAuth 安全治理已增强：** 受信任 Owner 可查看已登记客户端、核对请求 callback/scope/到期时间、检索审计和按 client_id 撤销所有相关 access/refresh/codes/pending；DCR 新增窗口频率限制（30 分钟内最多 5 次），授权 pending 8/客户端、30/全局。OAuth AS metadata 现在明确发布公共客户端 `none` 与 secret_post/basic 三种受支持方法。MCP tools/list 中三个工具标 readOnlyHint=true，`task_submit_safe` 显示是幂等的队列写入。
+[docs/CX_PAN_INTEGRATION.md:L8] - **实际协议验收：** 生产公网合成 OAuth 流程再次 PASS，临时 OAuth 测试客户端已删除，云端 Active Access=0、Active Refresh=0、registered client=0、pending request=0、DCR CLOSED。合成测试并不代表用户 ChatGPT/Claude Chat Web UI 已完成本人 OAuth 安装。
+[docs/CX_PAN_INTEGRATION.md:L9] - **一条终端命令：** `python3 bridge/connect_chatgpt.py` 将在用户本人可信交互式终端中打开短时 DCR、核对浏览器一次性请求、明确 START 和 APPROVE 后完成授权，最后关闭 DCR。非交互终端/Agent 调用拒绝。完整手册见 `bridge/P9_CONNECTOR_OPERATIONS.md`。
+[docs/CX_PAN_INTEGRATION.md:L10] - 下文 P0–P8 内容保留历史，不要将 P9 完成的插件**创建**写作已连接。P10 需要用户真实客户端 UI 操作、权限确认与实际调用回执。
+[docs/CX_PAN_INTEGRATION.md:L11] 
+[docs/CX_PAN_INTEGRATION.md:L12] ## 当前权威状态（2026-10-27 P8 更新）
+[docs/CX_PAN_INTEGRATION.md:L13] 
+[docs/CX_PAN_INTEGRATION.md:L14] - **生产可用的 ChatGPT OAuth 端点已搭建：** 腾讯云现有 Caddy HTTPS 独立路由到回环 `cx-pan-oauth.service`（18489），标准发现 `/.well-known/oauth-authorization-server`、`/.well-known/oauth-protected-resource/cxpan/chatgpt/mcp`、授权 `/authorize`、Token `/token`、DCR `/register` 和撤销 `/revoke`。资源 MCP `cx-pan-mcp.service`（18488）同时支持 P7 旧凭据及经过 Resource/Scope/TTL/Revocation 验证的 OAuth access token。
+[docs/CX_PAN_INTEGRATION.md:L15] - **安全边界：** OAuth 申请只有 `tasks:safe`，客户端注册默认关闭且需要 SSH Owner 临时开放；同意授权需用户从浏览器读 Request ID 并通过可信终端显式批准，没有公开的“点一下即批准”按钮。
+[docs/CX_PAN_INTEGRATION.md:L16] - **生产合成客户端验收：** 真正公网 HTTPS DCR → S256 授权码 → 审批 → Token → MCP initialize / safe Echo 任务 COMPLETED → Refresh → Revocation；测试 Token 已全部吊销，云端有效 Access/Refresh 计数为零。
+[docs/CX_PAN_INTEGRATION.md:L17] - **不能误报：** 当前并未观察真实 ChatGPT Plugins 用户界面或 Claude Chat 网页端完成连接。ChatGPT native UI 仍需要用户在 Plugins 中安装并授权；Claude 仍沿用 P7 独立 Bearer。该 P8 为 SDK-backed 自建 Auth 服务，CIMD 未实现，当前使用 DCR；在接私有文件或提升付费权限前需要专门安全审计。详见 `bridge/P8_OAUTH_OPERATIONS.md`。
+[docs/CX_PAN_INTEGRATION.md:L18] - 下方 P0–P7 保留历史记录，以 P8 本节和对应 Notion 页面为最新阶段状态。
+==== END_EXCERPT ====

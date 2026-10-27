@@ -1,0 +1,3 @@
+# Line-labelled source snapshots deliberately retain trailing spaces after labels for blank source lines.
+packets/*.txt -whitespace
+compact_packets/*.txt -whitespace

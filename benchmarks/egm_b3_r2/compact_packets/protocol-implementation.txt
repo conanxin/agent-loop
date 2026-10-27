@@ -1,0 +1,174 @@
+==== FILE=docs/STATE_MACHINE.md LINES=70-98 ORIGINAL_SOURCE_SHA256=26b57562cc1ddefab5027c07859d70bad6988d1475937263402022ef9425c339 ====
+[docs/STATE_MACHINE.md:L70] | `NEEDS_HUMAN_REVIEW` | System | Needs human review before continuing |
+[docs/STATE_MACHINE.md:L71] 
+[docs/STATE_MACHINE.md:L72] ## Transitions
+[docs/STATE_MACHINE.md:L73] 
+[docs/STATE_MACHINE.md:L74] | From | To | Trigger | Command |
+[docs/STATE_MACHINE.md:L75] |---|---|---|---|
+[docs/STATE_MACHINE.md:L76] | `INIT` | `COMMAND_READY` | Manual | `agent-loop-set-state` |
+[docs/STATE_MACHINE.md:L77] | `COMMAND_READY` | `DISPATCHED_TO_HERMES` | Human confirmation | `relay --once --mark-dispatched` |
+[docs/STATE_MACHINE.md:L78] | `DISPATCHED_TO_HERMES` | `HERMES_REPORT_WRITTEN` | Hermes report | `relay --once --report-path` |
+[docs/STATE_MACHINE.md:L79] | `HERMES_REPORT_WRITTEN` | `OPENCLAW_JUDGING` | Human confirmation | `relay --judge-prompt --mark-judging` |
+[docs/STATE_MACHINE.md:L80] | `OPENCLAW_JUDGING` | `DONE` | OpenClaw decision | `relay --decision-path` (DONE) |
+[docs/STATE_MACHINE.md:L81] | `OPENCLAW_JUDGING` | `OPENCLAW_PLANNING` | OpenClaw decision | `relay --decision-path` (NEXT_COMMAND) |
+[docs/STATE_MACHINE.md:L82] | `OPENCLAW_JUDGING` | `PARTIAL` | OpenClaw decision | `relay --decision-path` (PARTIAL) |
+[docs/STATE_MACHINE.md:L83] | `OPENCLAW_JUDGING` | `BLOCKED` | OpenClaw decision | `relay --decision-path` (BLOCKED) |
+[docs/STATE_MACHINE.md:L84] | `OPENCLAW_JUDGING` | `NEEDS_HUMAN_REVIEW` | OpenClaw decision | `relay --decision-path` (NEEDS_HUMAN_REVIEW) |
+[docs/STATE_MACHINE.md:L85] 
+[docs/STATE_MACHINE.md:L86] ## Decision → State Mapping
+[docs/STATE_MACHINE.md:L87] 
+[docs/STATE_MACHINE.md:L88] | Decision | Resulting State | Next Action |
+[docs/STATE_MACHINE.md:L89] |---|---|---|
+[docs/STATE_MACHINE.md:L90] | `DONE` | `DONE` | Loop complete |
+[docs/STATE_MACHINE.md:L91] | `NEXT_COMMAND` | `OPENCLAW_PLANNING` | OpenClaw plans next command |
+[docs/STATE_MACHINE.md:L92] | `REPAIR_COMMAND` | `OPENCLAW_PLANNING` | OpenClaw repairs current command |
+[docs/STATE_MACHINE.md:L93] | `PARTIAL` | `PARTIAL` | Human reviews partial results |
+[docs/STATE_MACHINE.md:L94] | `BLOCKED` | `BLOCKED` | Human unblocks |
+[docs/STATE_MACHINE.md:L95] | `NEEDS_HUMAN_REVIEW` | `NEEDS_HUMAN_REVIEW` | Human reviews and decides |
+[docs/STATE_MACHINE.md:L96] 
+[docs/STATE_MACHINE.md:L97] ## Error States
+[docs/STATE_MACHINE.md:L98] 
+==== END_EXCERPT ====
+==== FILE=docs/SPEC.md LINES=85-100 ORIGINAL_SOURCE_SHA256=edb931dde0c56d88b73ded570fab18f2b81787ea9350948c9b3b118133893a72 ====
+[docs/SPEC.md:L85] ## State Machine
+[docs/SPEC.md:L86] 
+[docs/SPEC.md:L87] | State | Description | Next Action |
+[docs/SPEC.md:L88] |---|---|---|
+[docs/SPEC.md:L89] | `INIT` | Goal created | Set to `COMMAND_READY` |
+[docs/SPEC.md:L90] | `OPENCLAW_PLANNING` | OpenClaw planning next command | Wait for command file |
+[docs/SPEC.md:L91] | `COMMAND_READY` | Command written, ready to dispatch | `relay --once` prints command |
+[docs/SPEC.md:L92] | `DISPATCHED_TO_HERMES` | Command sent to Hermes | Hermes executes |
+[docs/SPEC.md:L93] | `HERMES_RUNNING` | Hermes executing | Wait for report |
+[docs/SPEC.md:L94] | `HERMES_REPORT_WRITTEN` | Report written | `--report-path` to record |
+[docs/SPEC.md:L95] | `OPENCLAW_JUDGING` | OpenClaw judging | `--judge-prompt` to build prompt |
+[docs/SPEC.md:L96] | `DONE` | Goal complete | No further action |
+[docs/SPEC.md:L97] | `PARTIAL` | Partial success | Human review needed |
+[docs/SPEC.md:L98] | `BLOCKED` | Blocked | Human intervention needed |
+[docs/SPEC.md:L99] | `NEEDS_HUMAN_REVIEW` | Needs human review | Human decides next step |
+[docs/SPEC.md:L100] 
+==== END_EXCERPT ====
+==== FILE=bin/agent-loop-relay LINES=480-535 ORIGINAL_SOURCE_SHA256=5537f4e9e796811dd0390269c2b1088fff5555457310753c0c3961832818e177 ====
+[bin/agent-loop-relay:L480] # =====================================================================
+[bin/agent-loop-relay:L481] if decision_mode:
+[bin/agent-loop-relay:L482]     # 1. Validate state
+[bin/agent-loop-relay:L483]     if current_state not in ("OPENCLAW_JUDGING", "HERMES_REPORT_WRITTEN"):
+[bin/agent-loop-relay:L484]         print(f"Error: Decision ingestion is only valid after judge prompt / report written. (current: {current_state})", file=sys.stderr)
+[bin/agent-loop-relay:L485]         sys.exit(1)
+[bin/agent-loop-relay:L486] 
+[bin/agent-loop-relay:L487]     last_report = state.get("last_report")
+[bin/agent-loop-relay:L488]     if (last_report and state.get("last_report_sha256") and
+[bin/agent-loop-relay:L489]         (not os.path.isfile(last_report) or
+[bin/agent-loop-relay:L490]          file_digest(last_report) != state["last_report_sha256"])):
+[bin/agent-loop-relay:L491]         die("report changed after ingestion; do not accept a decision on stale evidence")
+[bin/agent-loop-relay:L492] 
+[bin/agent-loop-relay:L493]     # 2. Validate decision file path
+[bin/agent-loop-relay:L494]     if not decision_file:
+[bin/agent-loop-relay:L495]         print("Error: --decision-path requires <absolute_decision_path>", file=sys.stderr)
+[bin/agent-loop-relay:L496]         sys.exit(2)
+[bin/agent-loop-relay:L497] 
+[bin/agent-loop-relay:L498]     if not os.path.isabs(decision_file):
+[bin/agent-loop-relay:L499]         die("decision path must be absolute")
+[bin/agent-loop-relay:L500]     if not os.path.isfile(decision_file):
+[bin/agent-loop-relay:L501]         print(f"Error: decision file not found: {decision_file}", file=sys.stderr)
+[bin/agent-loop-relay:L502]         sys.exit(1)
+[bin/agent-loop-relay:L503] 
+[bin/agent-loop-relay:L504]     # Parse and validate the canonical decision, including identity and round.
+[bin/agent-loop-relay:L505]     # For an unmigrated legacy state (iteration=0), infer the active round from
+[bin/agent-loop-relay:L506]     # the accepted report when one exists.
+[bin/agent-loop-relay:L507]     expected = int(state.get("iteration") or 0)
+[bin/agent-loop-relay:L508]     if not expected and state.get("last_report") and os.path.isfile(state["last_report"]):
+[bin/agent-loop-relay:L509]         _, expected = parse_canonical(state["last_report"], "HERMES_REPORT")
+[bin/agent-loop-relay:L510]     fields, round_num = parse_canonical(
+[bin/agent-loop-relay:L511]         decision_file, "OPENCLAW_DECISION", expected or None
+[bin/agent-loop-relay:L512]     )
+[bin/agent-loop-relay:L513]     decision_value = fields["decision"]
+[bin/agent-loop-relay:L514]     if not expected:
+[bin/agent-loop-relay:L515]         state["iteration"] = round_num
+[bin/agent-loop-relay:L516] 
+[bin/agent-loop-relay:L517]     # 9. Update state
+[bin/agent-loop-relay:L518]     old_state = current_state
+[bin/agent-loop-relay:L519]     state["last_decision"] = decision_file
+[bin/agent-loop-relay:L520]     state["last_decision_sha256"] = file_digest(decision_file)
+[bin/agent-loop-relay:L521]     state["updated_at"] = now_iso()
+[bin/agent-loop-relay:L522]     if decision_value in ("NEXT_COMMAND", "REPAIR_COMMAND"):
+[bin/agent-loop-relay:L523]         state["human_approval_required"] = fields["requires_human_approval"] == "true"
+[bin/agent-loop-relay:L524]         state["human_approved"] = None
+[bin/agent-loop-relay:L525] 
+[bin/agent-loop-relay:L526]     # Decision → state mapping
+[bin/agent-loop-relay:L527]     if decision_value == "DONE":
+[bin/agent-loop-relay:L528]         state["current_state"] = "DONE"
+[bin/agent-loop-relay:L529]     elif decision_value == "BLOCKED":
+[bin/agent-loop-relay:L530]         state["current_state"] = "BLOCKED"
+[bin/agent-loop-relay:L531]     elif decision_value == "NEEDS_HUMAN_REVIEW":
+[bin/agent-loop-relay:L532]         state["current_state"] = "NEEDS_HUMAN_REVIEW"
+[bin/agent-loop-relay:L533]     elif decision_value == "PARTIAL":
+[bin/agent-loop-relay:L534]         state["current_state"] = "PARTIAL"
+[bin/agent-loop-relay:L535]     elif decision_value in ("NEXT_COMMAND", "REPAIR_COMMAND"):
+==== END_EXCERPT ====
+==== FILE=bin/agent-loop-set-state LINES=23-87 ORIGINAL_SOURCE_SHA256=d6e10fdd32968f58710bd08c8e9c3425abd441c77529f12e08b6cc470e93edef ====
+[bin/agent-loop-set-state:L23]     exit 2
+[bin/agent-loop-set-state:L24] fi
+[bin/agent-loop-set-state:L25] 
+[bin/agent-loop-set-state:L26] GOAL_ID="$1"
+[bin/agent-loop-set-state:L27] if ! [[ "$GOAL_ID" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+[bin/agent-loop-set-state:L28]     echo "Error: goal_id must match [a-zA-Z0-9_-]+" >&2
+[bin/agent-loop-set-state:L29]     exit 2
+[bin/agent-loop-set-state:L30] fi
+[bin/agent-loop-set-state:L31] NEW_STATE="$2"
+[bin/agent-loop-set-state:L32] 
+[bin/agent-loop-set-state:L33] VALID_STATES="INIT OPENCLAW_PLANNING COMMAND_READY WAITING_HUMAN_APPROVAL DISPATCHED_TO_HERMES HERMES_RUNNING HERMES_REPORT_WRITTEN OPENCLAW_JUDGING DONE PARTIAL BLOCKED NEEDS_HUMAN_REVIEW"
+[bin/agent-loop-set-state:L34] 
+[bin/agent-loop-set-state:L35] # Validate state value.
+[bin/agent-loop-set-state:L36] VALID=0
+[bin/agent-loop-set-state:L37] for s in $VALID_STATES; do
+[bin/agent-loop-set-state:L38]     if [ "$s" = "$NEW_STATE" ]; then
+[bin/agent-loop-set-state:L39]         VALID=1
+[bin/agent-loop-set-state:L40]         break
+[bin/agent-loop-set-state:L41]     fi
+[bin/agent-loop-set-state:L42] done
+[bin/agent-loop-set-state:L43] if [ "$VALID" -ne 1 ]; then
+[bin/agent-loop-set-state:L44]     echo "Invalid state: ${NEW_STATE}" >&2
+[bin/agent-loop-set-state:L45]     echo "Valid states:" >&2
+[bin/agent-loop-set-state:L46]     for s in $VALID_STATES; do
+[bin/agent-loop-set-state:L47]         echo "  - $s" >&2
+[bin/agent-loop-set-state:L48]     done
+[bin/agent-loop-set-state:L49]     exit 1
+[bin/agent-loop-set-state:L50] fi
+[bin/agent-loop-set-state:L51] 
+[bin/agent-loop-set-state:L52] GOAL_DIR="${AGENT_LOOP_HOME}/goals/${GOAL_ID}"
+[bin/agent-loop-set-state:L53] STATE_FILE="${GOAL_DIR}/state.json"
+[bin/agent-loop-set-state:L54] 
+[bin/agent-loop-set-state:L55] if [ ! -f "$STATE_FILE" ]; then
+[bin/agent-loop-set-state:L56]     echo "Goal not found: ${GOAL_ID}" >&2
+[bin/agent-loop-set-state:L57]     echo "Expected state file: ${STATE_FILE}" >&2
+[bin/agent-loop-set-state:L58]     exit 1
+[bin/agent-loop-set-state:L59] fi
+[bin/agent-loop-set-state:L60] 
+[bin/agent-loop-set-state:L61] TIMESTAMP="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+[bin/agent-loop-set-state:L62] 
+[bin/agent-loop-set-state:L63] # Update state.json safely via Python stdlib `json`.
+[bin/agent-loop-set-state:L64] python3 - "$STATE_FILE" "$NEW_STATE" "$TIMESTAMP" <<'PYEOF'
+[bin/agent-loop-set-state:L65] import json, os, sys, tempfile
+[bin/agent-loop-set-state:L66] 
+[bin/agent-loop-set-state:L67] state_file = sys.argv[1]
+[bin/agent-loop-set-state:L68] new_state = sys.argv[2]
+[bin/agent-loop-set-state:L69] timestamp = sys.argv[3]
+[bin/agent-loop-set-state:L70] 
+[bin/agent-loop-set-state:L71] with open(state_file, "r", encoding="utf-8") as f:
+[bin/agent-loop-set-state:L72]     state = json.load(f)
+[bin/agent-loop-set-state:L73] 
+[bin/agent-loop-set-state:L74] state["current_state"] = new_state
+[bin/agent-loop-set-state:L75] state["updated_at"] = timestamp
+[bin/agent-loop-set-state:L76] 
+[bin/agent-loop-set-state:L77] # Atomic write: write to tmp file in same dir, then rename.
+[bin/agent-loop-set-state:L78] dir_name = os.path.dirname(state_file)
+[bin/agent-loop-set-state:L79] fd, tmp_path = tempfile.mkstemp(dir=dir_name, suffix=".tmp", prefix=".state.")
+[bin/agent-loop-set-state:L80] try:
+[bin/agent-loop-set-state:L81]     with os.fdopen(fd, "w", encoding="utf-8") as f:
+[bin/agent-loop-set-state:L82]         json.dump(state, f, indent=2, ensure_ascii=False)
+[bin/agent-loop-set-state:L83]         f.write("\n")
+[bin/agent-loop-set-state:L84]     os.replace(tmp_path, state_file)
+[bin/agent-loop-set-state:L85] except Exception:
+[bin/agent-loop-set-state:L86]     if os.path.exists(tmp_path):
+[bin/agent-loop-set-state:L87]         os.unlink(tmp_path)
+==== END_EXCERPT ====

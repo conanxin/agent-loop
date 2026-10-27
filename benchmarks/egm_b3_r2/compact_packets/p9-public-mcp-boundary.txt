@@ -1,0 +1,232 @@
+==== FILE=bridge/mcp_gateway.py LINES=100-144 ORIGINAL_SOURCE_SHA256=6e8ac2c7cef7c13d238a5255f6e4a223f5f280b36d1ef34954d73b36a6532f43 ====
+[bridge/mcp_gateway.py:L100] 
+[bridge/mcp_gateway.py:L101] def check_visible(record):
+[bridge/mcp_gateway.py:L102]     task = record.get("task")
+[bridge/mcp_gateway.py:L103]     if not isinstance(task, dict) or (
+[bridge/mcp_gateway.py:L104]         task.get("project_id") != "CX-PAN" or
+[bridge/mcp_gateway.py:L105]         task.get("requester") not in MCP_ACTORS or
+[bridge/mcp_gateway.py:L106]         task.get("target") not in SAFE_TARGETS
+[bridge/mcp_gateway.py:L107]     ):
+[bridge/mcp_gateway.py:L108]         raise ValueError("task not found")
+[bridge/mcp_gateway.py:L109]     return task
+[bridge/mcp_gateway.py:L110] 
+[bridge/mcp_gateway.py:L111] 
+[bridge/mcp_gateway.py:L112] def quota_slot(principal, key):
+[bridge/mcp_gateway.py:L113]     """Atomic per-principal/day quota; duplicate calls share the same slot."""
+[bridge/mcp_gateway.py:L114]     QUOTA_DB.parent.mkdir(parents=True, exist_ok=True)
+[bridge/mcp_gateway.py:L115]     conn = sqlite3.connect(QUOTA_DB, timeout=5)
+[bridge/mcp_gateway.py:L116]     try:
+[bridge/mcp_gateway.py:L117]         conn.execute("PRAGMA busy_timeout=5000")
+[bridge/mcp_gateway.py:L118]         conn.execute("""
+[bridge/mcp_gateway.py:L119]         CREATE TABLE IF NOT EXISTS quotas (
+[bridge/mcp_gateway.py:L120]           client TEXT NOT NULL,
+[bridge/mcp_gateway.py:L121]           day TEXT NOT NULL,
+[bridge/mcp_gateway.py:L122]           idem_key TEXT NOT NULL,
+[bridge/mcp_gateway.py:L123]           PRIMARY KEY (client, day, idem_key)
+[bridge/mcp_gateway.py:L124]         )
+[bridge/mcp_gateway.py:L125]         """)
+[bridge/mcp_gateway.py:L126]         day = datetime.now(timezone.utc).date().isoformat()
+[bridge/mcp_gateway.py:L127]         conn.execute("BEGIN IMMEDIATE")
+[bridge/mcp_gateway.py:L128]         record = conn.execute(
+[bridge/mcp_gateway.py:L129]             "SELECT 1 FROM quotas WHERE client=? AND day=? AND idem_key=?",
+[bridge/mcp_gateway.py:L130]             (principal, day, key)).fetchone()
+[bridge/mcp_gateway.py:L131]         if record:
+[bridge/mcp_gateway.py:L132]             conn.commit()
+[bridge/mcp_gateway.py:L133]             return
+[bridge/mcp_gateway.py:L134]         count = conn.execute(
+[bridge/mcp_gateway.py:L135]             "SELECT count(*) FROM quotas WHERE client=? AND day=?",
+[bridge/mcp_gateway.py:L136]             (principal, day)).fetchone()[0]
+[bridge/mcp_gateway.py:L137]         if count >= MAX_DAILY_UNIQUE:
+[bridge/mcp_gateway.py:L138]             conn.rollback()
+[bridge/mcp_gateway.py:L139]             raise ValueError("daily new task quota reached for this client")
+[bridge/mcp_gateway.py:L140]         conn.execute(
+[bridge/mcp_gateway.py:L141]             "INSERT INTO quotas(client,day,idem_key) VALUES(?,?,?)",
+[bridge/mcp_gateway.py:L142]             (principal, day, key))
+[bridge/mcp_gateway.py:L143]         conn.commit()
+[bridge/mcp_gateway.py:L144]     finally:
+==== END_EXCERPT ====
+==== FILE=bridge/mcp_gateway.py LINES=215-260 ORIGINAL_SOURCE_SHA256=6e8ac2c7cef7c13d238a5255f6e4a223f5f280b36d1ef34954d73b36a6532f43 ====
+[bridge/mcp_gateway.py:L215]         t = check_visible(result)
+[bridge/mcp_gateway.py:L216]         data = result.get("result_text")
+[bridge/mcp_gateway.py:L217]         return {
+[bridge/mcp_gateway.py:L218]             "task_id": t["task_id"], "status": t["status"],
+[bridge/mcp_gateway.py:L219]             "target": t["target"], "run_id": t.get("run_id"),
+[bridge/mcp_gateway.py:L220]             # Only the safe echo/public source capture target can reach here.
+[bridge/mcp_gateway.py:L221]             "result_text": data[:19500] if isinstance(data, str) else None,
+[bridge/mcp_gateway.py:L222]             "error": (result.get("error_text") or "")[:450],
+[bridge/mcp_gateway.py:L223]         }
+[bridge/mcp_gateway.py:L224] 
+[bridge/mcp_gateway.py:L225]     @server.tool(
+[bridge/mcp_gateway.py:L226]         name="task_submit_safe",
+[bridge/mcp_gateway.py:L227]         description=(
+[bridge/mcp_gateway.py:L228]             "Submit only a bounded echo or a whitelisted PUBLIC agent-loop "
+[bridge/mcp_gateway.py:L229]             "document capture. Requires a caller-chosen stable idempotency_key. "
+[bridge/mcp_gateway.py:L230]             "No paid model invocation, file edits, arbitrary paths or shell."
+[bridge/mcp_gateway.py:L231]         ),
+[bridge/mcp_gateway.py:L232]         annotations=ToolAnnotations(readOnlyHint=False,destructiveHint=False,
+[bridge/mcp_gateway.py:L233]                                     idempotentHint=True,openWorldHint=False),
+[bridge/mcp_gateway.py:L234]     )
+[bridge/mcp_gateway.py:L235]     def task_submit_safe(
+[bridge/mcp_gateway.py:L236]         target: Literal["echo.local", "repo.evidence.local"],
+[bridge/mcp_gateway.py:L237]         goal: str,
+[bridge/mcp_gateway.py:L238]         idempotency_key: str,
+[bridge/mcp_gateway.py:L239]     ) -> dict:
+[bridge/mcp_gateway.py:L240]         if target not in SAFE_TARGETS:
+[bridge/mcp_gateway.py:L241]             raise ValueError("target not in safe capability allowlist")
+[bridge/mcp_gateway.py:L242]         if not IDENTIFIER.fullmatch(idempotency_key) or len(idempotency_key) > 100:
+[bridge/mcp_gateway.py:L243]             raise ValueError("invalid idempotency_key: use 8..100 ASCII letters/numbers/_/-")
+[bridge/mcp_gateway.py:L244]         if not isinstance(goal, str) or not (4 <= len(goal) <= 420):
+[bridge/mcp_gateway.py:L245]             raise ValueError("safe task goal must be 4..420 characters")
+[bridge/mcp_gateway.py:L246]         if target == "repo.evidence.local" and goal not in SAFE_SOURCE_FILES:
+[bridge/mcp_gateway.py:L247]             raise ValueError("capture is limited to three allowlisted public files")
+[bridge/mcp_gateway.py:L248]         quota_slot(principal, idempotency_key)
+[bridge/mcp_gateway.py:L249]         response = mcp_rpc("POST", "/v1/tasks", {
+[bridge/mcp_gateway.py:L250]             "idempotency_key": "p7-" + principal + "-" + idempotency_key,
+[bridge/mcp_gateway.py:L251]             "requester": "mcp." + principal,
+[bridge/mcp_gateway.py:L252]             "project_id": "CX-PAN",
+[bridge/mcp_gateway.py:L253]             "target": target,
+[bridge/mcp_gateway.py:L254]             "capability": SAFE_TARGETS[target],
+[bridge/mcp_gateway.py:L255]             "goal": goal,
+[bridge/mcp_gateway.py:L256]             "repo_id": "agent-loop" if target == "repo.evidence.local" else "none",
+[bridge/mcp_gateway.py:L257]         })
+[bridge/mcp_gateway.py:L258]         t = response["task"]
+[bridge/mcp_gateway.py:L259]         return {"task_id": t["task_id"], "status": t["status"],
+[bridge/mcp_gateway.py:L260]                 "target": t["target"], "duplicate": response["duplicate"]}
+==== END_EXCERPT ====
+==== FILE=bridge/mcp_gateway.py LINES=265-325 ORIGINAL_SOURCE_SHA256=6e8ac2c7cef7c13d238a5255f6e4a223f5f280b36d1ef34954d73b36a6532f43 ====
+[bridge/mcp_gateway.py:L265] class BearerGate:
+[bridge/mcp_gateway.py:L266]     """Pure ASGI middleware (streaming-safe) in front of both MCP apps."""
+[bridge/mcp_gateway.py:L267] 
+[bridge/mcp_gateway.py:L268]     def __init__(self, app):
+[bridge/mcp_gateway.py:L269]         self.app = app
+[bridge/mcp_gateway.py:L270] 
+[bridge/mcp_gateway.py:L271]     @staticmethod
+[bridge/mcp_gateway.py:L272]     def scope_client(path):
+[bridge/mcp_gateway.py:L273]         parts = path.split("/")
+[bridge/mcp_gateway.py:L274]         if len(parts) >= 3 and parts[1] in EXTERNAL_PATHS:
+[bridge/mcp_gateway.py:L275]             return parts[1]
+[bridge/mcp_gateway.py:L276]         return None
+[bridge/mcp_gateway.py:L277] 
+[bridge/mcp_gateway.py:L278]     async def __call__(self, scope, receive, send):
+[bridge/mcp_gateway.py:L279]         if scope["type"] != "http":
+[bridge/mcp_gateway.py:L280]             await self.app(scope, receive, send)
+[bridge/mcp_gateway.py:L281]             return
+[bridge/mcp_gateway.py:L282]         path = scope.get("path") or ""
+[bridge/mcp_gateway.py:L283]         if path == "/healthz":
+[bridge/mcp_gateway.py:L284]             await self.app(scope, receive, send)
+[bridge/mcp_gateway.py:L285]             return
+[bridge/mcp_gateway.py:L286]         name = self.scope_client(path)
+[bridge/mcp_gateway.py:L287]         headers = dict(scope.get("headers", []))
+[bridge/mcp_gateway.py:L288]         origin = headers.get(b"origin", b"").decode("utf-8", errors="replace")
+[bridge/mcp_gateway.py:L289]         if origin and origin not in ALLOWED_ORIGINS:
+[bridge/mcp_gateway.py:L290]             response = JSONResponse({"error": "forbidden origin"}, status_code=403)
+[bridge/mcp_gateway.py:L291]             await response(scope, receive, send)
+[bridge/mcp_gateway.py:L292]             return
+[bridge/mcp_gateway.py:L293]         if name is None:
+[bridge/mcp_gateway.py:L294]             response = JSONResponse({"error": "not found"}, status_code=404)
+[bridge/mcp_gateway.py:L295]             await response(scope, receive, send)
+[bridge/mcp_gateway.py:L296]             return
+[bridge/mcp_gateway.py:L297]         auth = headers.get(b"authorization", b"").decode("utf-8", errors="replace")
+[bridge/mcp_gateway.py:L298]         expected_digest = load_client_hashes()[name]
+[bridge/mcp_gateway.py:L299]         supplied = auth.removeprefix("Bearer ")
+[bridge/mcp_gateway.py:L300]         valid = (
+[bridge/mcp_gateway.py:L301]             auth.startswith("Bearer ") and len(supplied) <= 256 and
+[bridge/mcp_gateway.py:L302]             hmac.compare_digest(
+[bridge/mcp_gateway.py:L303]                 hashlib.sha256(supplied.encode("utf-8")).hexdigest(),
+[bridge/mcp_gateway.py:L304]                 expected_digest,
+[bridge/mcp_gateway.py:L305]             )
+[bridge/mcp_gateway.py:L306]         )
+[bridge/mcp_gateway.py:L307]         # ChatGPT's native plugin cannot supply an arbitrary API key. P8
+[bridge/mcp_gateway.py:L308]         # additionally accepts a short-lived, scope/audience-checked OAuth
+[bridge/mcp_gateway.py:L309]         # access token. Claude continues to use its separate P7 credential.
+[bridge/mcp_gateway.py:L310]         if name == "chatgpt" and not valid and auth.startswith("Bearer "):
+[bridge/mcp_gateway.py:L311]             valid = verify_oauth_access(
+[bridge/mcp_gateway.py:L312]                 supplied, resource=OAUTH_RESOURCE, scope=OAUTH_SCOPE
+[bridge/mcp_gateway.py:L313]             )
+[bridge/mcp_gateway.py:L314]         if not valid:
+[bridge/mcp_gateway.py:L315]             metadata = (
+[bridge/mcp_gateway.py:L316]                 'Bearer resource_metadata="https://www.conanxin.com/'
+[bridge/mcp_gateway.py:L317]                 '.well-known/oauth-protected-resource/cxpan/chatgpt/mcp", '
+[bridge/mcp_gateway.py:L318]                 'scope="tasks:safe", error="invalid_token"'
+[bridge/mcp_gateway.py:L319]                 if name == "chatgpt" else 'Bearer realm="CX-PAN restricted MCP"'
+[bridge/mcp_gateway.py:L320]             )
+[bridge/mcp_gateway.py:L321]             response = JSONResponse({"error": "unauthorized"}, status_code=401,
+[bridge/mcp_gateway.py:L322]                 headers={"WWW-Authenticate": metadata})
+[bridge/mcp_gateway.py:L323]             await response(scope, receive, send)
+[bridge/mcp_gateway.py:L324]             return
+[bridge/mcp_gateway.py:L325]         await self.app(scope, receive, send)
+==== END_EXCERPT ====
+==== FILE=bridge/oauth_store.py LINES=93-115 ORIGINAL_SOURCE_SHA256=6dba6b6608740acb98e8af697a098bc8e291e97c01977c7efbbe408c48ce1649 ====
+[bridge/oauth_store.py:L93] def verify_access(token, resource=RESOURCE, scope=SCOPE):
+[bridge/oauth_store.py:L94]     """Fail closed. Never return the token or unfiltered database records."""
+[bridge/oauth_store.py:L95]     if not isinstance(token, str) or not (35 <= len(token) <= 256):
+[bridge/oauth_store.py:L96]         return False
+[bridge/oauth_store.py:L97]     con = db_connect()
+[bridge/oauth_store.py:L98]     if con is None:
+[bridge/oauth_store.py:L99]         return False
+[bridge/oauth_store.py:L100]     try:
+[bridge/oauth_store.py:L101]         row = con.execute("""
+[bridge/oauth_store.py:L102]             SELECT scopes_json, resource, expires_at, revoked, kind
+[bridge/oauth_store.py:L103]             FROM tokens WHERE token_digest=?
+[bridge/oauth_store.py:L104]         """, (digest(token),)).fetchone()
+[bridge/oauth_store.py:L105]         if not row or row["kind"] != "access" or row["revoked"]:
+[bridge/oauth_store.py:L106]             return False
+[bridge/oauth_store.py:L107]         if row["resource"] != resource or row["expires_at"] <= int(time.time()):
+[bridge/oauth_store.py:L108]             return False
+[bridge/oauth_store.py:L109]         import json
+[bridge/oauth_store.py:L110]         return scope in json.loads(row["scopes_json"])
+[bridge/oauth_store.py:L111]     except (sqlite3.DatabaseError, ValueError):
+[bridge/oauth_store.py:L112]         return False
+[bridge/oauth_store.py:L113]     finally:
+[bridge/oauth_store.py:L114]         con.close()
+[bridge/oauth_store.py:L115] 
+==== END_EXCERPT ====
+==== FILE=bridge/oauth_server.py LINES=309-355 ORIGINAL_SOURCE_SHA256=6001fd314af3c35c84b0ced4cf5a9157e6f0b87eaafaa29f55544d242c2511b6 ====
+[bridge/oauth_server.py:L309]             con.close()
+[bridge/oauth_server.py:L310] 
+[bridge/oauth_server.py:L311]     async def load_access_token(self, token):
+[bridge/oauth_server.py:L312]         con=db_connect()
+[bridge/oauth_server.py:L313]         if con is None:
+[bridge/oauth_server.py:L314]             return None
+[bridge/oauth_server.py:L315]         try:
+[bridge/oauth_server.py:L316]             row=con.execute(
+[bridge/oauth_server.py:L317]                 "SELECT * FROM tokens WHERE token_digest=? AND kind='access'",
+[bridge/oauth_server.py:L318]                 (digest(token),)
+[bridge/oauth_server.py:L319]             ).fetchone()
+[bridge/oauth_server.py:L320]             if not row or row["revoked"] or (
+[bridge/oauth_server.py:L321]                 row["expires_at"]<=int(time.time()) or row["resource"]!=RESOURCE
+[bridge/oauth_server.py:L322]             ):
+[bridge/oauth_server.py:L323]                 return None
+[bridge/oauth_server.py:L324]             return AccessToken(
+[bridge/oauth_server.py:L325]                 token=token, client_id=row["client_id"],
+[bridge/oauth_server.py:L326]                 scopes=json.loads(row["scopes_json"]),
+[bridge/oauth_server.py:L327]                 expires_at=row["expires_at"], resource=row["resource"]
+[bridge/oauth_server.py:L328]             )
+[bridge/oauth_server.py:L329]         finally:
+[bridge/oauth_server.py:L330]             con.close()
+[bridge/oauth_server.py:L331] 
+[bridge/oauth_server.py:L332]     async def revoke_token(self, token):
+[bridge/oauth_server.py:L333]         con=db_connect(create=True)
+[bridge/oauth_server.py:L334]         try:
+[bridge/oauth_server.py:L335]             row=con.execute(
+[bridge/oauth_server.py:L336]                 "SELECT family FROM tokens WHERE token_digest=?",
+[bridge/oauth_server.py:L337]                 (digest(token.token),)
+[bridge/oauth_server.py:L338]             ).fetchone()
+[bridge/oauth_server.py:L339]             if row:
+[bridge/oauth_server.py:L340]                 con.execute("UPDATE tokens SET revoked=1 WHERE family=?",
+[bridge/oauth_server.py:L341]                             (row["family"],))
+[bridge/oauth_server.py:L342]                 con.commit()
+[bridge/oauth_server.py:L343]         finally:
+[bridge/oauth_server.py:L344]             con.close()
+[bridge/oauth_server.py:L345] 
+[bridge/oauth_server.py:L346] 
+[bridge/oauth_server.py:L347] def owner_approve(request_id, verdict):
+[bridge/oauth_server.py:L348]     """Only local SSH shell can execute this, not exposed as an HTTP POST."""
+[bridge/oauth_server.py:L349]     if not isinstance(request_id, str) or len(request_id)<30:
+[bridge/oauth_server.py:L350]         raise ValueError("Invalid pending request ID")
+[bridge/oauth_server.py:L351]     con=db_connect(create=True)
+[bridge/oauth_server.py:L352]     try:
+[bridge/oauth_server.py:L353]         con.execute("BEGIN IMMEDIATE")
+[bridge/oauth_server.py:L354]         row=con.execute(
+[bridge/oauth_server.py:L355]             "SELECT client_id,decision,expires_at,consumed FROM pending WHERE request_digest=?",
+==== END_EXCERPT ====

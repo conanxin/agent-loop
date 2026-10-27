@@ -1,0 +1,134 @@
+{
+  "schema": "cxpan.egm_b3r2_packets/1",
+  "revision": "231290845a4117ba7e05ac5226b802b4faf11045",
+  "planted_defects": false,
+  "method": "unaltered source excerpts from pinned Git commit",
+  "cases": [
+    {
+      "case_id": "protocol-implementation",
+      "packet_path": "benchmarks/egm_b3_r2/packets/protocol-implementation.txt",
+      "packet_sha256": "3d4add5507faf950493d2c3985765cea520428581ecc4cfa8e5a1fc963d4217b",
+      "packet_bytes": 21053,
+      "line_count": 286,
+      "question": "The documented goal state machine and implementation: identify actionable correctness or documentation/code-drift risks affecting transitions, validation and approvals.",
+      "segments": [
+        {
+          "path": "docs/STATE_MACHINE.md",
+          "start": 56,
+          "end": 101,
+          "original_source_sha256": "26b57562cc1ddefab5027c07859d70bad6988d1475937263402022ef9425c339"
+        },
+        {
+          "path": "docs/SPEC.md",
+          "start": 85,
+          "end": 100,
+          "original_source_sha256": "edb931dde0c56d88b73ded570fab18f2b81787ea9350948c9b3b118133893a72"
+        },
+        {
+          "path": "bin/agent-loop-relay",
+          "start": 397,
+          "end": 454,
+          "original_source_sha256": "5537f4e9e796811dd0390269c2b1088fff5555457310753c0c3961832818e177"
+        },
+        {
+          "path": "bin/agent-loop-relay",
+          "start": 482,
+          "end": 539,
+          "original_source_sha256": "5537f4e9e796811dd0390269c2b1088fff5555457310753c0c3961832818e177"
+        },
+        {
+          "path": "bin/agent-loop-relay",
+          "start": 590,
+          "end": 640,
+          "original_source_sha256": "5537f4e9e796811dd0390269c2b1088fff5555457310753c0c3961832818e177"
+        },
+        {
+          "path": "bin/agent-loop-set-state",
+          "start": 36,
+          "end": 80,
+          "original_source_sha256": "d6e10fdd32968f58710bd08c8e9c3425abd441c77529f12e08b6cc470e93edef"
+        }
+      ]
+    },
+    {
+      "case_id": "p6-evidence-integrity",
+      "packet_path": "benchmarks/egm_b3_r2/packets/p6-evidence-integrity.txt",
+      "packet_sha256": "6bf3fbbeae649d9856cda318951f077e79c6ddc80c8d77ffab2ce176d70e7b26",
+      "packet_bytes": 21048,
+      "line_count": 291,
+      "question": "End-to-end evidence capture, digest verification and reviewer provenance: find real data-integrity and race or authorization risks, not merely missing documentation.",
+      "segments": [
+        {
+          "path": "bridge/evidence.py",
+          "start": 15,
+          "end": 125,
+          "original_source_sha256": "11fc8313a12aeb796b41f5b9f7506d4fc4095b4ae4694b0b765f9293b389362a"
+        },
+        {
+          "path": "bridge/source_review.py",
+          "start": 52,
+          "end": 127,
+          "original_source_sha256": "def0913f1abe50ee2c0f1470f81c07362b990215a10b6c717a18067d59e7ee39"
+        },
+        {
+          "path": "bridge/hub.py",
+          "start": 140,
+          "end": 205,
+          "original_source_sha256": "08aecae1e23992d2fe58a64d1a85ca3cb31cacf30fb43a518ecd61d4d4bdd65c"
+        },
+        {
+          "path": "bridge/cloud_worker.py",
+          "start": 94,
+          "end": 123,
+          "original_source_sha256": "2999214d56aee98d9ca516118df1be78391678743bff2d8a7fa00ffcdc6c92a8"
+        }
+      ]
+    },
+    {
+      "case_id": "p9-public-mcp-boundary",
+      "packet_path": "benchmarks/egm_b3_r2/packets/p9-public-mcp-boundary.txt",
+      "packet_sha256": "844ccaa22912b92ece0d11edf12d889ba16892e1e31efd52cca25d2022fbfd2e",
+      "packet_bytes": 24492,
+      "line_count": 308,
+      "question": "Analyze real MCP public safe-tool authorization and OAuth scope/rate boundary. Identify only verifiable vulnerabilities or contract mismatches in the provided code; do not assume missing modules are absent.",
+      "segments": [
+        {
+          "path": "bridge/mcp_gateway.py",
+          "start": 102,
+          "end": 147,
+          "original_source_sha256": "6e8ac2c7cef7c13d238a5255f6e4a223f5f280b36d1ef34954d73b36a6532f43"
+        },
+        {
+          "path": "bridge/mcp_gateway.py",
+          "start": 148,
+          "end": 250,
+          "original_source_sha256": "6e8ac2c7cef7c13d238a5255f6e4a223f5f280b36d1ef34954d73b36a6532f43"
+        },
+        {
+          "path": "bridge/mcp_gateway.py",
+          "start": 265,
+          "end": 324,
+          "original_source_sha256": "6e8ac2c7cef7c13d238a5255f6e4a223f5f280b36d1ef34954d73b36a6532f43"
+        },
+        {
+          "path": "bridge/oauth_store.py",
+          "start": 93,
+          "end": 114,
+          "original_source_sha256": "6dba6b6608740acb98e8af697a098bc8e291e97c01977c7efbbe408c48ce1649"
+        },
+        {
+          "path": "bridge/oauth_server.py",
+          "start": 288,
+          "end": 337,
+          "original_source_sha256": "6001fd314af3c35c84b0ced4cf5a9157e6f0b87eaafaa29f55544d242c2511b6"
+        },
+        {
+          "path": "docs/CX_PAN_INTEGRATION.md",
+          "start": 4,
+          "end": 18,
+          "original_source_sha256": "f5254c1792d69797511e5998cba15cb39e964d9938e79c41f93268dcf8748fdc"
+        }
+      ]
+    }
+  ]
+}

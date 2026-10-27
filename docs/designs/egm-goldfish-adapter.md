@@ -1,6 +1,6 @@
 # EGM-R2｜Goldfish 独立设计审查适配规格（草案）
 
-> 日期：2026-10-27（北京时间）｜状态：DESIGN_ONLY + GATE_A_PARTIAL_PASS + GATE_B1_PASS + GATE_B2_SCOPED_PASS + GATE_B3_PILOT_COMPLETED
+> 日期：2026-10-27（北京时间）｜状态：DESIGN_ONLY + GATE_A_PARTIAL_PASS + GATE_B1_PASS + GATE_B2_SCOPED_PASS + GATE_B3_PILOT_COMPLETED + GATE_B3_R2_PARTIAL
 > 仓库：conanxin/agent-loop｜设计目标：在现有 CX-PAN Hub 之上增加可选的、证据优先的独立设计审查流程。
 > 来源研究： https://app.notion.com/p/40634a28189a81a4a14dc301f54e4af9
 > 注意：CX-PAN 既有 P10 是网页客户端真实安装/授权阶段；EGM 不占用这个编号。
@@ -117,12 +117,14 @@ output:
 - [x] 第一轮长输出双并发 0/6 正常交付；SQLite 恢复的两份普通审查不得误报为 CLI 完成，另有模型输出格式失败。
 - [x] 第二轮缩短 JSON 并串行后 6/6 正常交付、零工具调用；两种审查各找出 6/6 种子冲突，助手按证据人工复核 12 个 TP、无已确认 FP。
 - [x] 记录时间与模型实际 Token：普通 85.443 秒 / 12012 tokens；Goldfish 104.076 秒 / 12924 tokens，未观察到增量检出率优势。
-- [ ] 真实未经植入缺陷的困难样本、不同模型重复、独立人类盲评与供应商真实费用仍未验收。
+- [x] Gate B3-R2 已采用 Git 提交 `2312908` 的三份未经植入缺陷的真实源码包：紧凑 adaptive 条件第一轮 6 次尝试仅 2 次正常交付，P6/P9 四次超时，未得到三组完整质量比较。
+- [x] 成功的状态机配对产生四个候选 finding，本地 Hermes 在匿名、隐藏策略标签情况下将其归并为两类风险并全部定为 PARTIAL；没有得到经独立模型确认的真实增量缺陷。
+- [ ] 真实未经植入缺陷的困难样本已开展，但**可交付的完整三组配对、不同模型重复、独立人类盲评和供应商真实费用**仍未验收。
 - [ ] 收益证据不足时不把 Goldfish 变为所有任务默认，更不向 P9 MCP 开放新的能力。
 
 如 Gate A 部分失败，不自动大范围修改 Hub 或 Worker。先记录实际失败原因，按最小差异修复。
 
-Gate B1 证据：docs/designs/egm-goldfish-gate-b-20261027.md。Gate B2 证据：docs/designs/egm-goldfish-gate-b2-20261027.md。Gate B3 受控对照数据：docs/designs/egm-goldfish-gate-b3-20261027.md。两者不是 Google 官方 EGM 插件集成证明，仍须在真实规格对照实验中核验审查价值。
+Gate B1 证据：docs/designs/egm-goldfish-gate-b-20261027.md。Gate B2 证据：docs/designs/egm-goldfish-gate-b2-20261027.md。Gate B3 受控对照数据：docs/designs/egm-goldfish-gate-b3-20261027.md。Gate B3-R2 未植入缺陷源码试验：docs/designs/egm-goldfish-gate-b3-r2-20261027.md。这些成果不是 Google 官方 EGM 插件集成证明，仍须在真实规格对照实验中核验审查价值。
 
 ## 8. 研究更新
 

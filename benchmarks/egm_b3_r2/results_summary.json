@@ -1,0 +1,194 @@
+{
+  "schema": "egm.b3r2.stage_receipt/1",
+  "date": "2026-10-27",
+  "source_commit": "231290845a4117ba7e05ac5226b802b4faf11045",
+  "source_unmodified": true,
+  "experiment_conditions": {
+    "full_context_first_pair": [
+      {
+        "case": "protocol-implementation",
+        "arm": "baseline",
+        "status": "COMPLETED",
+        "seconds": 91.402,
+        "model_result_delivered": true
+      },
+      {
+        "case": "protocol-implementation",
+        "arm": "goldfish",
+        "status": "TIMEOUT",
+        "seconds": 140,
+        "model_result_delivered": false
+      }
+    ],
+    "compact_unsupported_low_thinking": [
+      {
+        "case": "protocol-implementation",
+        "arm": "baseline",
+        "status": "INVALID_OR_FAILED",
+        "seconds": 17.733,
+        "model_result_delivered": false
+      },
+      {
+        "case": "protocol-implementation",
+        "arm": "goldfish",
+        "status": "INVALID_OR_FAILED",
+        "seconds": 17.256,
+        "model_result_delivered": false
+      }
+    ],
+    "compact_adaptive": {
+      "planned": 12,
+      "attempted": 6,
+      "delivered": 2,
+      "timeouts": 4,
+      "not_attempted": 6,
+      "full_pairs_delivered": 1,
+      "arm_summaries": {
+        "baseline": {
+          "completed": 1,
+          "planned": 6,
+          "total_model_findings_unverified": 2,
+          "valid_line_refs_not_semantic_proof": 9,
+          "bad_ref_count": 0,
+          "total_seconds": 71.395,
+          "median_seconds": 71.395,
+          "total_tokens": 10545,
+          "token_coverage": 1,
+          "bad_state_or_failures": {
+            "NOT_RUN": 3,
+            "TIMEOUT": 2
+          }
+        },
+        "goldfish": {
+          "completed": 1,
+          "planned": 6,
+          "total_model_findings_unverified": 2,
+          "valid_line_refs_not_semantic_proof": 6,
+          "bad_ref_count": 0,
+          "total_seconds": 62.866,
+          "median_seconds": 62.866,
+          "total_tokens": 8519,
+          "token_coverage": 1,
+          "bad_state_or_failures": {
+            "NOT_RUN": 3,
+            "TIMEOUT": 2
+          }
+        }
+      },
+      "case_receipts": [
+        {
+          "case": "protocol-implementation",
+          "arm": "baseline",
+          "repeat": 1,
+          "status": "COMPLETED",
+          "seconds": 71.395,
+          "finding_count": 2
+        },
+        {
+          "case": "protocol-implementation",
+          "arm": "goldfish",
+          "repeat": 1,
+          "status": "COMPLETED",
+          "seconds": 62.866,
+          "finding_count": 2
+        },
+        {
+          "case": "p6-evidence-integrity",
+          "arm": "baseline",
+          "repeat": 1,
+          "status": "TIMEOUT",
+          "seconds": 135,
+          "finding_count": 0
+        },
+        {
+          "case": "p6-evidence-integrity",
+          "arm": "goldfish",
+          "repeat": 1,
+          "status": "TIMEOUT",
+          "seconds": 135,
+          "finding_count": 0
+        },
+        {
+          "case": "p9-public-mcp-boundary",
+          "arm": "baseline",
+          "repeat": 1,
+          "status": "TIMEOUT",
+          "seconds": 135,
+          "finding_count": 0
+        },
+        {
+          "case": "p9-public-mcp-boundary",
+          "arm": "goldfish",
+          "repeat": 1,
+          "status": "TIMEOUT",
+          "seconds": 135,
+          "finding_count": 0
+        }
+      ]
+    }
+  },
+  "blind_review": {
+    "reviewer": "fresh-context local Hermes model; no arm names in judgment input",
+    "human_blind_review": false,
+    "case": "protocol-implementation",
+    "judged_findings": 4,
+    "supported": 0,
+    "partial": 4,
+    "unsupported": 0,
+    "uncertain": 0,
+    "distinct_partial_clusters": 2,
+    "assessments": [
+      {
+        "case": "protocol-implementation",
+        "repeat": "r1",
+        "arm": "baseline",
+        "finding_index": 1,
+        "verdict": "PARTIAL",
+        "issue_cluster": "set-state无转换边校验",
+        "evidence_reason": "代码事实成立：L33 仅枚举目标状态、L43 只校验枚举合法性、L74 直接写 current_state，可见片段内确无源状态/转换边检查，可越过 L77/L79 两条 Human confirmation 边。但文档 L76 明确把该命令列为 Trigger=Manual 的人工入口，脚本错误信息也枚举全部 11 个状态，说明其本就设计为通用人工改写工具；是否缺少审计/受限调用需片段外证据，风险假设未证实。"
+      },
+      {
+        "case": "protocol-implementation",
+        "repeat": "r1",
+        "arm": "baseline",
+        "finding_index": 0,
+        "verdict": "PARTIAL",
+        "issue_cluster": "decision路径接受报告态",
+        "evidence_reason": "L483 把 HERMES_REPORT_WRITTEN 与 OPENCLAW_JUDGING 并列接受、L527 将决策直接映射为 DONE，可见行确与文档决策边（可见行 L80-L82 源态均为 OPENCLAW_JUDGING）不一致。但 L484 报错文本“after judge prompt / report written”显示双态接受是有意设计；转换表可能在 L82 后另有行，且 --decision-path 是否先执行 judge-prompt 在片段外；另因 set-state 已可任意改态，该入口不构成新增越权能力。"
+      },
+      {
+        "case": "protocol-implementation",
+        "repeat": "r1",
+        "arm": "goldfish",
+        "finding_index": 1,
+        "verdict": "PARTIAL",
+        "issue_cluster": "decision路径接受报告态",
+        "evidence_reason": "与 B02 同一代码路径与根因，同簇。引用 L79/L483/L527 仅能证明 CLI 接受报告态下的决策，未证明这违反协议：转换表完整行集、--decision-path 是否强制先执行 judge-prompt 及其内部是否留存评判记录均在片段外，不能据此断定存在可验证的绕过。"
+      },
+      {
+        "case": "protocol-implementation",
+        "repeat": "r1",
+        "arm": "goldfish",
+        "finding_index": 0,
+        "verdict": "PARTIAL",
+        "issue_cluster": "set-state无转换边校验",
+        "evidence_reason": "与 B01 同一根因（枚举校验+直接覆盖），同簇；其唯一文档引用 docs/STATE_MACHINE.md:L74 只是 “| From | To | Trigger | Command |” 表头行而非具体转换行，未落到 L76/L77/L79 的触发条件，证据强度弱于 B01。同样缺少片段外证据以区分“缺陷”与该脚本本就是的人工覆盖工具。"
+      }
+    ]
+  },
+  "conclusion": {
+    "valid_quality_pairs": 1,
+    "incremental_verified_goldfish_defects": 0,
+    "reliable_global_quality_comparison": false,
+    "reason": "Only one paired case delivered; its two issue clusters were judged PARTIAL in both arms, and P6/P9 each timed out for both arms.",
+    "adoption": "Keep single-agent default; opt-in independent Goldfish for high-risk designs only. Require reproducible verification before implementation.",
+    "uncertainty": "Model execution reliability and unreviewed source context prevent generalizing quality uplift."
+  },
+  "limits": [
+    "No independent human blind grader",
+    "No replicated complete case pairs",
+    "No verified USD charges",
+    "Full/compact/invalid-config conditions not pooled",
+    "First case PARTIAL does not establish absence of any actual defect"
+  ]
+}
