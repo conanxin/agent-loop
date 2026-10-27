@@ -86,12 +86,22 @@ def run(source_task_id, workflow_id, timeout, output_dir=STATE_DIR):
         raise FileNotFoundError("Hermes CLI not installed")
     print(f"EGM_INPUT path={source['path']} sha256={source['sha256']} "
           f"bytes={source['size_bytes']} prompt_chars={len(prompt)}", flush=True)
+    # The ordinary Hermes -z oneshot does not pass skip_context_files or
+    # skip_memory to AIAgent; use Hermes chat --ignore-rules, whose runtime
+    # actually applies both flags (verified against Hermes 0.22.5 source).
+    # The explicit query file is NOT an AGENTS.md or workspace rule.
+    isolated_dir = output_dir / (workflow_id + ".workspace")
+    isolated_dir.mkdir(parents=True, exist_ok=True)
+    prompt_path = isolated_dir / "goldfish-query.txt"
+    prompt_path.write_text(prompt, encoding="utf-8")
+    cmd = [str(HERMES), "chat", "-Q", "--ignore-rules",
+           "--source", "tool", "--in", str(isolated_dir),
+           "-t", "clarify", "--run-budget", str(max(15, timeout - 10)),
+           "--format", "text", "--query-file", str(prompt_path)]
     started = time.monotonic()
     try:
         proc = subprocess.run(
-            [str(HERMES), "-t", "clarify", "-z", prompt],
-            cwd=Path(__file__).resolve().parents[1],
-            capture_output=True, text=True,
+            cmd, cwd=isolated_dir, capture_output=True, text=True,
             stdin=subprocess.DEVNULL, timeout=timeout,
         )
         elapsed = round(time.monotonic() - started, 2)
@@ -107,10 +117,16 @@ def run(source_task_id, workflow_id, timeout, output_dir=STATE_DIR):
             "elapsed_s": elapsed,
             "stderr_chars": len(proc.stderr or ""),
             "prompt_chars": len(prompt),
+            "isolation_mode": "chat--ignore-rules--source-tool--no-resume",
+            "hermes_session_id": (re.findall(r"(?m)^session_id:\s*(local-[a-z0-9]+)\s*$",
+                                              proc.stderr or "") or [None])[0],
+            "model_args": ["chat", "-Q", "--ignore-rules", "--source", "tool",
+                           "-t", "clarify"],
             "model_output": text[:15000],
             "limitations": [
                 "Same original P6 evidence capsule; no second cloud invocation",
-                "A one-shot process is not itself proof of full history isolation",
+                "--ignore-rules passed and two-marker A/B previously confirmed AGENTS.md suppression",
+                "One negative context-marker test is not proof of all possible history isolation",
                 "Line-reference range verification does not establish semantic correctness",
             ],
         }

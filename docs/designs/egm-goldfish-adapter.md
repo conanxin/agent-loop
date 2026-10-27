@@ -1,6 +1,6 @@
 # EGM-R2｜Goldfish 独立设计审查适配规格（草案）
 
-> 日期：2026-10-27（北京时间）｜状态：DESIGN_ONLY + GATE_A_PARTIAL_PASS
+> 日期：2026-10-27（北京时间）｜状态：DESIGN_ONLY + GATE_A_PARTIAL_PASS + GATE_B1_PASS
 > 仓库：conanxin/agent-loop｜设计目标：在现有 CX-PAN Hub 之上增加可选的、证据优先的独立设计审查流程。
 > 来源研究： https://app.notion.com/p/40634a28189a81a4a14dc301f54e4af9
 > 注意：CX-PAN 既有 P10 是网页客户端真实安装/授权阶段；EGM 不占用这个编号。
@@ -36,7 +36,7 @@ EGM 的官方 skill/persona 是方法学参考，**不是声称 Hermes/OpenClaw 
 | `bridge/cloud_worker.py` | OpenClaw pinned deny-all-tools 和 JSON 结果、sessionId | 确认真正新会话、角色专用提示词和会话轨迹 |
 | `tests/` | P6 来源链回归 | 来源版本、分歧保留、隔离负向探测 |
 
-注意：CLI 无工具权限不能推导出没有自动注入历史上下文。应把两者独立验证。
+注意：CLI 无工具权限不能推导出没有自动注入历史上下文。应把两者独立验证。2026-10-27 Gate B1 证明了本地 Hermes `chat --ignore-rules` 和云端 OpenClaw `contextInjection=never` 在合成 AGENTS.md 标记 A/B 试验中的预期行为，但没有证明所有历史上下文零泄漏。
 
 ## 4. 最小真实试验（阶段 A，无服务改动）
 
@@ -97,13 +97,21 @@ output:
 - [ ] 用相同输入再执行时只返回 duplicate，不发生二次付费模型调用。
 - [ ] 保存经过人工判定的缺陷、误报及不能证明之处。
 
-**Gate B：专用 EGM 运行接口**
+**Gate B1：合成 AGENTS.md 注入隔离（2026-10-27 已实机 PASS）**
+- [x] Hermes 同一临时 workspace 的控制模式和 `chat --ignore-rules` 严格模式：合法来源词两者都能读，项目规则词仅控制模式可读；两个独立新会话 ID。
+- [x] 腾讯云 OpenClaw `contextInjection=always` 与 `never` A/B：合法来源词两者都能读，项目规则词仅控制模式可读；新的独立 `agent exec` ID。
+- [x] 原有 P6 相同证据胶囊经新的严格 Hermes chat 路径成功复核：97.51 秒、1376 字符、15 处结构有效引用、已保存 session ID。
+- [x] 配置未扩权，实验用 OpenClaw 对照配置执行后删除，没有重启 Gateway 或对公网添加工具。
+
+**Gate B2/B3：完整会话来源及质量 Benchmark（待验收）**
 - [ ] 隔离对照：Elephant 私密会话设只存在于历史的随机标记；Goldfish 的完整输入列表、注入文件和输出均受核查，无偷读历史的证据。
 - [ ] 规范原文标记在合法输入中可正确读取；不同随机模型运行的 trace / run_id 有据可查。
 - [ ] 执行服务注册新能力时保留原 P9 公网边界；现有系统不受影响。
 - [ ] 使用至少三份不同复杂度规格进行普通 Review vs Goldfish 对照，人工打分，记录耗时与可获得的 token 花费。
 
 如 Gate A 部分失败，不自动大范围修改 Hub 或 Worker。先记录实际失败原因，按最小差异修复。
+
+Gate B1 完整实机证据（含两次无效前测及重跑改进）：`docs/designs/egm-goldfish-gate-b-20261027.md`。该项仅证明受控项目规则注入隔离，不应借此勾选仍待测试的全部历史对话、记忆供应方、模型调用工具轨迹及普通评审质量基线。
 
 ## 8. 研究更新
 
