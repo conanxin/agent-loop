@@ -1,6 +1,6 @@
 # EGM-R2｜Goldfish 独立设计审查适配规格（草案）
 
-> 日期：2026-10-27（北京时间）｜状态：DESIGN_ONLY + GATE_A_PARTIAL_PASS + GATE_B1_PASS
+> 日期：2026-10-27（北京时间）｜状态：DESIGN_ONLY + GATE_A_PARTIAL_PASS + GATE_B1_PASS + GATE_B2_SCOPED_PASS
 > 仓库：conanxin/agent-loop｜设计目标：在现有 CX-PAN Hub 之上增加可选的、证据优先的独立设计审查流程。
 > 来源研究： https://app.notion.com/p/40634a28189a81a4a14dc301f54e4af9
 > 注意：CX-PAN 既有 P10 是网页客户端真实安装/授权阶段；EGM 不占用这个编号。
@@ -103,15 +103,23 @@ output:
 - [x] 原有 P6 相同证据胶囊经新的严格 Hermes chat 路径成功复核：97.51 秒、1376 字符、15 处结构有效引用、已保存 session ID。
 - [x] 配置未扩权，实验用 OpenClaw 对照配置执行后删除，没有重启 Gateway 或对公网添加工具。
 
-**Gate B2/B3：完整会话来源及质量 Benchmark（待验收）**
-- [ ] 隔离对照：Elephant 私密会话设只存在于历史的随机标记；Goldfish 的完整输入列表、注入文件和输出均受核查，无偷读历史的证据。
-- [ ] 规范原文标记在合法输入中可正确读取；不同随机模型运行的 trace / run_id 有据可查。
-- [ ] 执行服务注册新能力时保留原 P9 公网边界；现有系统不受影响。
-- [ ] 使用至少三份不同复杂度规格进行普通 Review vs Goldfish 对照，人工打分，记录耗时与可获得的 token 花费。
+**Gate B2：实际历史和工具轨迹（2026-10-27 SCOPED_PASS，非全环境零泄漏）**
+- [x] Hermes 显式恢复和新会话正反对照，原会话 4 条消息、新会话 2 条、均 0 次工具调用；历史词仅在原会话。
+- [x] Cloud OpenClaw agent exec 新随机会话，正常无 --state-dir 时创建独立临时状态；历史词没有进入新请求的回答。
+- [x] Cloud compiled systemPrompt 实测：contextInjection=always 可读合成规则词，never 不可读；两个轨迹中 prior message count 均为 0。
+- [x] 发现旧 pinned config 的 tools.deny=["*"] 仍允许内置 tool_search：真实调用 1 次成功，检索结果为空。
+- [x] 使用临时配置增加 tools.toolSearch=false，真实 trace 显示 0 个模型可见工具 schema 和 0 次工具调用；现有生产 pinned 文件不动。
+- [x] 各主机私有目录保存任务与 SQLite 回执，不在 Git/Notion 复制随机词或凭据。
+- [ ] 尚未穷尽 Provider 侧隐藏上下文、全部扩展及外部记忆来源；不能宣称完全的零泄漏。
+
+**Gate B3：实际质量与成本比较（未执行）**
+- [ ] 至少三份不同复杂度的设计规格，普通 Review 与独立 Goldfish 使用可比较的 rubric、模型和输入范围。
+- [ ] 人工复核各发现的真阳性、误报及引用是否语义支持；记录真实耗时、可获得的 token 与计费来源。
+- [ ] 只有收益可证实后，才决定是否添加 CX-PAN 内部 Goldfish target，外部 P9 MCP 权限不随之扩展。
 
 如 Gate A 部分失败，不自动大范围修改 Hub 或 Worker。先记录实际失败原因，按最小差异修复。
 
-Gate B1 完整实机证据（含两次无效前测及重跑改进）：`docs/designs/egm-goldfish-gate-b-20261027.md`。该项仅证明受控项目规则注入隔离，不应借此勾选仍待测试的全部历史对话、记忆供应方、模型调用工具轨迹及普通评审质量基线。
+Gate B1 证据：docs/designs/egm-goldfish-gate-b-20261027.md。Gate B2 证据：docs/designs/egm-goldfish-gate-b2-20261027.md。两者不是 Google 官方 EGM 插件集成证明，仍须在真实规格对照实验中核验审查价值。
 
 ## 8. 研究更新
 
