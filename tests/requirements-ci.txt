@@ -1,0 +1,6 @@
+# Versions from the local environment that passed the complete contract suite.
+# These are installed in GitHub Actions only, not on the running hosts.
+mcp==1.26.0
+starlette==0.50.0
+httpx==0.28.1
+uvicorn==0.33.0
