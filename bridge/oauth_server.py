@@ -37,7 +37,7 @@ from starlette.responses import HTMLResponse, RedirectResponse, JSONResponse
 from starlette.routing import Route
 
 from oauth_store import (
-    OAUTH_DB, RESOURCE, ISSUER, SCOPE, MAX_AUTHORIZED_CLIENTS,
+    OAUTH_DB, RESOURCE, ISSUER, SCOPE, PI_RESOURCE, PI_SCOPE, VALID_RESOURCE_SCOPES, MAX_AUTHORIZED_CLIENTS,
     digest, db_connect, registration_is_open, set_registration_window,
 )
 from oauth_admin import (
@@ -126,7 +126,7 @@ class OwnerApprovalOAuth(OAuthAuthorizationServerProvider[
                 error="invalid_client_metadata",
                 error_description="Unsupported token endpoint auth method",
             )
-        if set(client_info.scope.split() if client_info.scope else [SCOPE]) - {SCOPE}:
+        if (client_info.scope.split() if client_info.scope else [SCOPE]) not in ([SCOPE],[PI_SCOPE]):
             raise RegistrationError(
                 error="invalid_client_metadata", error_description="Scope denied"
             )
@@ -164,15 +164,16 @@ class OwnerApprovalOAuth(OAuthAuthorizationServerProvider[
             con.close()
 
     async def authorize(self, client, params):
-        if params.resource != RESOURCE:
+        if params.resource not in VALID_RESOURCE_SCOPES:
             raise AuthorizeError(
                 error="invalid_request",
                 error_description="Required resource audience does not match CX-PAN"
             )
         scopes=params.scopes or []
-        if scopes != [SCOPE]:
+        if scopes != [VALID_RESOURCE_SCOPES[params.resource]]:
             raise AuthorizeError(
-                error="invalid_scope", error_description="Only tasks:safe allowed"
+                error="invalid_scope",
+                error_description="CX-PAN resource and requested scope do not match"
             )
         if not re.fullmatch(r"[a-zA-Z0-9_-]{43,128}", params.code_challenge):
             raise AuthorizeError(
@@ -242,7 +243,7 @@ class OwnerApprovalOAuth(OAuthAuthorizationServerProvider[
             ).fetchone()
             if not row or row["redeemed"] or row["client_id"]!=client.client_id or (
                 row["expires_at"]<=int(time.time()) or
-                row["resource"]!=RESOURCE
+                row["resource"] not in VALID_RESOURCE_SCOPES
             ):
                 con.rollback()
                 raise TokenError(error="invalid_grant",
@@ -268,7 +269,7 @@ class OwnerApprovalOAuth(OAuthAuthorizationServerProvider[
                 (digest(refresh_token),)
             ).fetchone()
             if not row or row["revoked"] or row["client_id"]!=client.client_id or (
-                row["expires_at"]<=int(time.time()) or row["resource"]!=RESOURCE
+                row["expires_at"]<=int(time.time()) or row["resource"] not in VALID_RESOURCE_SCOPES
             ):
                 return None
             return RefreshToken(
@@ -288,7 +289,7 @@ class OwnerApprovalOAuth(OAuthAuthorizationServerProvider[
                 (digest(refresh_token.token),)
             ).fetchone()
             if not row or row["revoked"] or row["client_id"]!=client.client_id or (
-                row["expires_at"]<=int(time.time()) or row["resource"]!=RESOURCE
+                row["expires_at"]<=int(time.time()) or row["resource"] not in VALID_RESOURCE_SCOPES
             ):
                 con.rollback()
                 raise TokenError(error="invalid_grant",
@@ -302,7 +303,7 @@ class OwnerApprovalOAuth(OAuthAuthorizationServerProvider[
                 "UPDATE tokens SET revoked=1 WHERE token_digest=?",
                 (digest(refresh_token.token),)
             )
-            result=_issue_pair(con,client.client_id,scopes,RESOURCE,row["family"])
+            result=_issue_pair(con,client.client_id,scopes,row["resource"],row["family"])
             con.commit()
             return result
         finally:
@@ -318,7 +319,7 @@ class OwnerApprovalOAuth(OAuthAuthorizationServerProvider[
                 (digest(token),)
             ).fetchone()
             if not row or row["revoked"] or (
-                row["expires_at"]<=int(time.time()) or row["resource"]!=RESOURCE
+                row["expires_at"]<=int(time.time()) or row["resource"] not in VALID_RESOURCE_SCOPES
             ):
                 return None
             return AccessToken(
@@ -431,6 +432,23 @@ async def pending_page(request):
         name=html.escape((client.get("client_name") or "ChatGPT connection")[:120])
         callback=html.escape(row["redirect_uri"])
         remaining=max(0,int(row["expires_at"]-time.time()))
+        selected_scopes=json.loads(row["scopes_json"])
+        if selected_scopes==[PI_SCOPE] and row["resource"]==PI_RESOURCE:
+            scope_description=(
+                "tasks:pi_text: up to 6 new MiniMax-M2.7 text-only model "
+                "tasks per UTC day through the owner's xinhailin Pi agent. "
+                "This may use paid/token-plan model allowance. The Pi "
+                "runtime cannot read or edit files, run shell commands, "
+                "call MCP tools, or save sessions through this endpoint."
+            )
+        elif selected_scopes==[SCOPE] and row["resource"]==RESOURCE:
+            scope_description=(
+                "tasks:safe: safe echo and approved public-document "
+                "capture. It cannot run shell commands, access NAS/private "
+                "files, or invoke paid models."
+            )
+        else:
+            return HTMLResponse("Unsupported OAuth scope/resource",status_code=400)
         # Request ID is shown only to the human who opened the OAuth browser.
         safe_code=html.escape(q)
         page=f"""<!doctype html><html lang="en">
@@ -440,9 +458,8 @@ async def pending_page(request):
 <style>body{{font:16px system-ui,sans-serif;max-width:640px;
 margin:50px auto;padding:20px;line-height:1.6}}</style>
 <h2>CX-PAN — pending owner approval</h2>
-<p>The client <b>{name}</b> requests only the <b>tasks:safe</b> scope:
-safe echo and approved public-document capture. It cannot run shell
-commands, access NAS/private files, or invoke paid models.</p>
+<p>The client <b>{name}</b> requests the following explicitly
+approved permission: {html.escape(scope_description)}</p>
 <p>Requested ChatGPT redirect: <code>{callback}</code></p>
 <p>To approve, the CX-PAN owner must inspect and approve this one-time
 request from an authenticated SSH terminal, not from a public web form.</p>
@@ -470,7 +487,7 @@ async def metadata_with_public_client_methods(_request):
     metadata=build_metadata(
         AnyHttpUrl(ISSUER),None,
         ClientRegistrationOptions(
-            enabled=True, valid_scopes=[SCOPE], default_scopes=[SCOPE]
+            enabled=True, valid_scopes=[SCOPE,PI_SCOPE], default_scopes=[SCOPE]
         ),
         RevocationOptions(enabled=True),
     )
@@ -488,7 +505,7 @@ def create_app():
     routes=create_auth_routes(
         provider,issuer,
         client_registration_options=ClientRegistrationOptions(
-            enabled=True,valid_scopes=[SCOPE],default_scopes=[SCOPE]
+            enabled=True,valid_scopes=[SCOPE,PI_SCOPE],default_scopes=[SCOPE]
         ),
         revocation_options=RevocationOptions(enabled=True),
     )
@@ -501,6 +518,10 @@ def create_app():
     routes += create_protected_resource_routes(
         AnyHttpUrl(RESOURCE),[issuer],scopes_supported=[SCOPE],
         resource_name="CX-PAN restricted safe tasks",
+    )
+    routes += create_protected_resource_routes(
+        AnyHttpUrl(PI_RESOURCE),[issuer],scopes_supported=[PI_SCOPE],
+        resource_name="CX-PAN xinhailin Pi text only tasks",
     )
     routes += [Route("/owner-approve",pending_page,methods=["GET"])]
     return Starlette(routes=routes)

@@ -1,0 +1,15 @@
+[Unit]
+Description=CX-PAN isolated xinhailin Pi text-only model worker
+After=network-online.target cx-pan-hub.service tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/cx-pan-hub
+ExecStart=/usr/bin/python3 %h/cx-pan-hub/pi_text_worker.py --interval 20
+Environment=PYTHONUNBUFFERED=1
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target

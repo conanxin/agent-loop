@@ -32,6 +32,7 @@ TARGETS = {
     "repo.evidence.local": "source.capture",
     "hermes.evidence.local": "source.verify",
     "openclaw.evidence.cloud": "source.verify",
+    "pi.text.cloud": "pi.text",
 }
 PARENT_TARGETS = {
     "hermes.model.local": "claude.code.local",
@@ -126,6 +127,8 @@ def valid_submit(body):
     idem = body.get("idempotency_key")
     if not isinstance(goal, str) or not (4 <= len(goal) <= 3000):
         raise ValueError("goal must be 4 to 3000 characters")
+    if target == "pi.text.cloud" and len(goal) > 1200:
+        raise ValueError("Pi text goal limited to 1200 characters")
     if not isinstance(idem, str) or not (8 <= len(idem) <= 128):
         raise ValueError("idempotency_key must be 8 to 128 characters")
     requester = body.get("requester", "cxpan.cli")
@@ -134,6 +137,9 @@ def valid_submit(body):
     if not all(isinstance(s, str) and 1 <= len(s) <= 100
                for s in (requester, project_id, repo_id)):
         raise ValueError("invalid requester/project_id/repo_id")
+    if target == "pi.text.cloud" and (project_id != "CX-PAN" or
+        requester not in ("cxpan.internal.pi", "mcp.chatgpt.pi")):
+        raise ValueError("Pi text requires its dedicated requester")
     repo_targets = ("claude.code.local", "repo.validate.local", "repo.evidence.local")
     if target in repo_targets and repo_id != "agent-loop":
         raise ValueError("repository capabilities only allow repo_id=agent-loop")

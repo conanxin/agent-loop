@@ -15,6 +15,9 @@ OAUTH_DB = Path(os.getenv(
 RESOURCE = "https://www.conanxin.com/cxpan/chatgpt/mcp"
 ISSUER = "https://www.conanxin.com/"
 SCOPE = "tasks:safe"
+PI_SCOPE = "tasks:pi_text"
+PI_RESOURCE = "https://www.conanxin.com/cxpan/chatgpt-pi/mcp"
+VALID_RESOURCE_SCOPES = {RESOURCE: SCOPE, PI_RESOURCE: PI_SCOPE}
 MAX_AUTHORIZED_CLIENTS = 40
 
 

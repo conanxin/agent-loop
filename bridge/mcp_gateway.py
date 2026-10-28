@@ -32,6 +32,7 @@ from starlette.responses import JSONResponse
 from starlette.routing import Mount, Route
 from oauth_store import RESOURCE as OAUTH_RESOURCE
 from oauth_store import SCOPE as OAUTH_SCOPE
+from oauth_store import PI_SCOPE, PI_RESOURCE
 from oauth_store import verify_access as verify_oauth_access
 
 HOME = Path.home()
@@ -46,6 +47,7 @@ MCP_HOST = "127.0.0.1"
 MCP_PORT = int(os.getenv("CX_PAN_MCP_PORT", "18488"))
 EXTERNAL_PATHS = {
     "chatgpt": "/chatgpt/mcp",
+    "chatgpt-pi": "/chatgpt-pi/mcp",
     "claude": "/claude/mcp",
 }
 ALLOWED_ORIGINS = {
@@ -65,7 +67,7 @@ VERSION = "2025-11-25"
 
 def load_client_hashes():
     data = json.loads(CLIENTS.read_text(encoding="utf-8"))
-    if set(data) != set(EXTERNAL_PATHS):
+    if set(data) != {"chatgpt","claude"}:
         raise RuntimeError("MCP client registry must contain chatgpt and claude")
     for name, val in data.items():
         if not isinstance(val, str) or not re.fullmatch("[0-9a-f]{64}", val):
@@ -151,7 +153,9 @@ class OAuthToolFastMCP(FastMCP):
     async def list_tools(self):
         tools = await super().list_tools()
         for tool in tools:
-            tool.securitySchemes = [{"type": "oauth2", "scopes": [OAUTH_SCOPE]}]
+            tool.securitySchemes = [{"type": "oauth2", "scopes": [
+                PI_SCOPE if getattr(self, "_pi_oauth", False) else OAUTH_SCOPE
+            ]}]
         return tools
 
 
@@ -164,7 +168,7 @@ def tools_for(principal):
         ],
         allowed_origins=sorted(ALLOWED_ORIGINS),
     )
-    server = (OAuthToolFastMCP if principal == "chatgpt" else FastMCP)(
+    server = (OAuthToolFastMCP if principal in ("chatgpt", "chatgpt-pi") else FastMCP)(
         f"CX-PAN {principal} restricted connector",
         instructions=(
             "Safe user-controlled personal AI task status. Only read P7 "
@@ -175,6 +179,99 @@ def tools_for(principal):
         stateless_http=True, json_response=True,
         transport_security=security,
     )
+
+    if principal == "chatgpt-pi":
+        server._pi_oauth = True
+
+        def _pi_visible(receipt):
+            t = receipt.get("task")
+            if not isinstance(t, dict) or (
+                t.get("target") != "pi.text.cloud" or
+                t.get("capability") != "pi.text" or
+                t.get("project_id") != "CX-PAN" or
+                t.get("requester") != "mcp.chatgpt.pi"
+            ):
+                raise ValueError("task not found")
+            return t
+
+        @server.tool(
+            name="pi_capabilities",
+            description="Read this separately authorized Pi text-only tool and its limits.",
+            annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False,
+                                        openWorldHint=False),
+        )
+        def pi_capabilities() -> dict:
+            return {
+                "agent": "xinhailin / Pi 1.4.0",
+                "model": "minimax-cn/MiniMax-M2.7",
+                "mode": "text-only/no-tools/no-mcp/no-session",
+                "may_consume_model_allowance": True,
+                "max_new_model_tasks_per_utc_day": 6,
+                "max_input_characters": 1200,
+                "permissions": ["tasks:pi_text"],
+                "can_run_shell": False,
+                "can_read_private_files": False,
+            }
+
+        @server.tool(
+            name="pi_text_submit",
+            description=("Submit one bounded MiniMax Pi TEXT-only task to the "
+                         "owner's Windows laptop. Consumes model allowance; "
+                         "no Shell, files, MCP or sessions. A stable "
+                         "idempotency_key prevents duplicate model runs."),
+            annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False,
+                                        idempotentHint=True, openWorldHint=True),
+        )
+        def pi_text_submit(goal: str, idempotency_key: str) -> dict:
+            if not isinstance(goal, str) or not (4 <= len(goal) <= 1200):
+                raise ValueError("Pi task text must contain 4..1200 characters")
+            if not IDENTIFIER.fullmatch(idempotency_key) or len(idempotency_key)>90:
+                raise ValueError("idempotency_key must be 8..90 safe ASCII characters")
+            response = mcp_rpc("POST", "/v1/tasks", {
+                "idempotency_key": "p10-pi-" + idempotency_key,
+                "requester": "mcp.chatgpt.pi",
+                "project_id": "CX-PAN",
+                "target": "pi.text.cloud",
+                "capability": "pi.text",
+                "goal": goal, "repo_id": "none"
+            })
+            t = response["task"]
+            return {"task_id": t["task_id"], "status": t["status"],
+                    "duplicate": response["duplicate"], "target": t["target"]}
+
+        @server.tool(
+            name="pi_text_get",
+            description="Read the execution state of an authorized Pi text task.",
+            annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False,
+                                        openWorldHint=False),
+        )
+        def pi_text_get(task_id: str) -> dict:
+            if not UUID.fullmatch(task_id):
+                raise ValueError("invalid task_id")
+            t = _pi_visible(mcp_rpc("GET", f"/v1/tasks/{task_id}"))
+            return {"task_id": t["task_id"], "status": t["status"],
+                    "execution_health": t.get("execution_health"),
+                    "run_id": t.get("run_id"), "target": t["target"]}
+
+        @server.tool(
+            name="pi_text_result",
+            description="Read a completed, separately authorized Pi text answer.",
+            annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False,
+                                        openWorldHint=False),
+        )
+        def pi_text_result(task_id: str) -> dict:
+            if not UUID.fullmatch(task_id):
+                raise ValueError("invalid task_id")
+            obj=mcp_rpc("GET", f"/v1/tasks/{task_id}/result")
+            t = _pi_visible(obj)
+            return {
+                "task_id": t["task_id"], "status": t["status"],
+                "result_text": (obj.get("result_text") or "")[:16500],
+                "error": (obj.get("error_text") or "")[:500],
+                "run_id": t.get("run_id")
+            }
+
+        return server
 
     @server.tool(
         name="agents_list",
@@ -305,9 +402,10 @@ class BearerGate:
             await response(scope, receive, send)
             return
         auth = headers.get(b"authorization", b"").decode("utf-8", errors="replace")
-        expected_digest = load_client_hashes()[name]
+        expected_digest = load_client_hashes().get(name)
         supplied = auth.removeprefix("Bearer ")
         valid = (
+            expected_digest is not None and
             auth.startswith("Bearer ") and len(supplied) <= 256 and
             hmac.compare_digest(
                 hashlib.sha256(supplied.encode("utf-8")).hexdigest(),
@@ -317,16 +415,24 @@ class BearerGate:
         # ChatGPT's native plugin cannot supply an arbitrary API key. P8
         # additionally accepts a short-lived, scope/audience-checked OAuth
         # access token. Claude continues to use its separate P7 credential.
-        if name == "chatgpt" and not valid and auth.startswith("Bearer "):
+        if name in ("chatgpt", "chatgpt-pi") and not valid and auth.startswith("Bearer "):
             valid = verify_oauth_access(
-                supplied, resource=OAUTH_RESOURCE, scope=OAUTH_SCOPE
+                supplied,
+                resource=(PI_RESOURCE if name == "chatgpt-pi" else OAUTH_RESOURCE),
+                scope=(PI_SCOPE if name == "chatgpt-pi" else OAUTH_SCOPE),
             )
         if not valid:
             metadata = (
                 'Bearer resource_metadata="https://www.conanxin.com/'
-                '.well-known/oauth-protected-resource/cxpan/chatgpt/mcp", '
-                'scope="tasks:safe", error="invalid_token", error_description="CX-PAN OAuth connection required"'
-                if name == "chatgpt" else 'Bearer realm="CX-PAN restricted MCP"'
+                '.well-known/oauth-protected-resource/cxpan/chatgpt-pi/mcp", '
+                'scope="tasks:pi_text", error="invalid_token"'
+                if name == "chatgpt-pi" else (
+                    'Bearer resource_metadata="https://www.conanxin.com/'
+                    '.well-known/oauth-protected-resource/cxpan/chatgpt/mcp", '
+                    'scope="tasks:safe", error="invalid_token", '
+                    'error_description="CX-PAN OAuth connection required"'
+                    if name == "chatgpt" else 'Bearer realm="CX-PAN restricted MCP"'
+                )
             )
             response = JSONResponse({"error": "unauthorized"}, status_code=401,
                 headers={"WWW-Authenticate": metadata})
@@ -356,6 +462,7 @@ def create_app():
         routes=[
             Route("/healthz", healthz),
             Mount("/chatgpt", mounted["chatgpt"]),
+            Mount("/chatgpt-pi", mounted["chatgpt-pi"]),
             Mount("/claude", mounted["claude"]),
         ],
         lifespan=lifespan,
