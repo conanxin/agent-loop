@@ -145,6 +145,16 @@ def quota_slot(principal, key):
         conn.close()
 
 
+class OAuthToolFastMCP(FastMCP):
+    """Expose per-tool OAuth scopes to ChatGPT while retaining BearerGate."""
+
+    async def list_tools(self):
+        tools = await super().list_tools()
+        for tool in tools:
+            tool.securitySchemes = [{"type": "oauth2", "scopes": [OAUTH_SCOPE]}]
+        return tools
+
+
 def tools_for(principal):
     security = TransportSecuritySettings(
         enable_dns_rebinding_protection=True,
@@ -154,7 +164,7 @@ def tools_for(principal):
         ],
         allowed_origins=sorted(ALLOWED_ORIGINS),
     )
-    server = FastMCP(
+    server = (OAuthToolFastMCP if principal == "chatgpt" else FastMCP)(
         f"CX-PAN {principal} restricted connector",
         instructions=(
             "Safe user-controlled personal AI task status. Only read P7 "
@@ -315,7 +325,7 @@ class BearerGate:
             metadata = (
                 'Bearer resource_metadata="https://www.conanxin.com/'
                 '.well-known/oauth-protected-resource/cxpan/chatgpt/mcp", '
-                'scope="tasks:safe", error="invalid_token"'
+                'scope="tasks:safe", error="invalid_token", error_description="CX-PAN OAuth connection required"'
                 if name == "chatgpt" else 'Bearer realm="CX-PAN restricted MCP"'
             )
             response = JSONResponse({"error": "unauthorized"}, status_code=401,
